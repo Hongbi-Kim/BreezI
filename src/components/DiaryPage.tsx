@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Sparkles, Calendar, Smile, Frown, Angry, Zap } from 'lucide-react';
+import { Save, Sparkles, Calendar, Smile, Frown, Angry, Zap, Heart, Shell, ThumbsUp, ThumbsDown } from 'lucide-react';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
+import { Input as InputComponent } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
+import { Separator } from './ui/separator';
 import { EmotionManager } from './EmotionManager';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 
@@ -13,6 +15,16 @@ interface DiaryEntry {
   emotion: string;
   date: string;
   timestamp: string;
+  title?: string;
+  compliment?: string;
+  regrets?: string[];
+  characterMessages?: CharacterMessage[];
+}
+
+interface CharacterMessage {
+  characterId: string;
+  emoji: string;
+  message: string;
 }
 
 interface DiaryPageProps {
@@ -27,36 +39,41 @@ interface Emotion {
   emoji?: string;
   color: string;
   isCustom?: boolean;
+  isPositive?: boolean;
 }
 
 const defaultEmotions = [
-  { key: 'happy', label: '기쁨', icon: Smile, color: 'bg-yellow-100 text-yellow-700' },
-  { key: 'sad', label: '슬픔', icon: Frown, color: 'bg-blue-100 text-blue-700' },
-  { key: 'angry', label: '화남', icon: Angry, color: 'bg-red-100 text-red-700' },
-  { key: 'anxious', label: '불안', icon: Zap, color: 'bg-orange-100 text-orange-700' },
-  { key: 'neutral', label: '평온', icon: Calendar, color: 'bg-gray-100 text-gray-700' },
+  { key: 'happy', label: '기쁨', icon: Smile, color: 'bg-yellow-100 text-yellow-700', isPositive: true },
+  { key: 'sad', label: '슬픔', icon: Frown, color: 'bg-blue-100 text-blue-700', isPositive: false },
+  { key: 'angry', label: '버럭', icon: Angry, color: 'bg-red-100 text-red-700', isPositive: false },
+  { key: 'irritated', label: '까칠', icon: Zap, color: 'bg-purple-100 text-purple-700', isPositive: false },
+  { key: 'anxious', label: '불안', icon: Shell, color: 'bg-orange-100 text-orange-700', isPositive: false },
 ];
 
 export function DiaryPage({ accessToken }: DiaryPageProps) {
   const [content, setContent] = useState('');
+  const [title, setTitle] = useState('');
+  const [compliment, setCompliment] = useState('');
+  const [regrets, setRegrets] = useState('');
   const [selectedEmotion, setSelectedEmotion] = useState<string>('');
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [entries, setEntries] = useState<DiaryEntry[]>([]);
+  const [characterMessages, setCharacterMessages] = useState<CharacterMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [allEmotions, setAllEmotions] = useState<Emotion[]>(defaultEmotions);
 
   const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
-    loadDiaryEntries();
+    loadTodayEntry();
     loadAllEmotions();
+    loadCharacterMessages();
   }, []);
 
-  const loadDiaryEntries = async () => {
+  const loadTodayEntry = async () => {
     try {
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/diary/entries`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/diary/today?date=${today}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -66,19 +83,39 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
 
       if (response.ok) {
         const data = await response.json();
-        setEntries(data.entries || []);
-        
-        // Check if there's an entry for today
-        const todayEntry = data.entries.find((entry: DiaryEntry) => entry.date === today);
-        if (todayEntry) {
-          setContent(todayEntry.content);
-          setSelectedEmotion(todayEntry.emotion);
+        if (data.entry) {
+          const entry = data.entry;
+          setContent(entry.content || '');
+          setTitle(entry.title || '');
+          setCompliment(entry.compliment || '');
+          setRegrets(entry.regrets || '');
+          setSelectedEmotion(entry.emotion || '');
         }
       }
     } catch (error) {
-      console.error('Failed to load diary entries:', error);
+      console.error('Failed to load today entry:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadCharacterMessages = async () => {
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/diary/character-messages?date=${today}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setCharacterMessages(data.messages || []);
+      }
+    } catch (error) {
+      console.error('Failed to load character messages:', error);
     }
   };
 
@@ -119,7 +156,7 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
 
   const handleEmotionChange = () => {
     loadAllEmotions();
-    loadDiaryEntries(); // Reload entries in case some emotions were deleted
+    loadTodayEntry(); // Reload today's entry in case some emotions were deleted
   };
 
   const generateDraft = async () => {
@@ -148,8 +185,8 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
   };
 
   const saveDiary = async () => {
-    if (!content.trim() || !selectedEmotion) {
-      alert('일기 내용과 감정을 선택해주세요.');
+    if (!content.trim() || !selectedEmotion || !title.trim()) {
+      alert('일기 제목, 내용, 감정을 모두 입력해주세요.');
       return;
     }
 
@@ -164,8 +201,11 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
             'Authorization': `Bearer ${accessToken}`,
           },
           body: JSON.stringify({
+            title,
             content,
             emotion: selectedEmotion,
+            compliment,
+            regrets: regrets.trim(),
             date: today,
           }),
         }
@@ -173,7 +213,8 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
 
       if (response.ok) {
         alert('일기가 저장되었습니다!');
-        loadDiaryEntries(); // Reload entries
+        loadTodayEntry(); // Reload today's entry
+        loadCharacterMessages(); // Reload character messages
       } else {
         alert('일기 저장에 실패했습니다.');
       }
@@ -230,10 +271,23 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
             )}
           </Button>
 
+          {/* Diary title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              일기 제목
+            </label>
+            <InputComponent
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="오늘의 일기 제목을 적어주세요"
+              maxLength={50}
+            />
+          </div>
+
           {/* Emotion selector */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <p className="text-sm font-medium text-gray-700">오늘의 기분</p>
+              <p className="text-sm font-medium text-gray-700">오늘의 기분 *</p>
               <EmotionManager accessToken={accessToken} onEmotionChange={handleEmotionChange} />
             </div>
             <div className="flex flex-wrap gap-2">
@@ -280,11 +334,66 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
             </p>
           </div>
 
+          {/* Compliment section */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <ThumbsUp className="w-4 h-4 inline mr-1" />
+              칭찬하기
+            </label>
+            <InputComponent
+              value={compliment}
+              onChange={(e) => setCompliment(e.target.value)}
+              placeholder="오늘 자신에게 해주고 싶은 칭찬을 적어보세요"
+              maxLength={100}
+            />
+          </div>
+
+          {/* Regrets section */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <ThumbsDown className="w-4 h-4 inline mr-1" />
+              아쉬운 점
+            </label>
+            <InputComponent
+              value={regrets}
+              onChange={(e) => setRegrets(e.target.value)}
+              placeholder="오늘 아쉬웠던 점을 적어보세요"
+              maxLength={100}
+            />
+          </div>
+
+          {/* Character messages */}
+          {characterMessages.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <Heart className="w-4 h-4 inline mr-1" />
+                캐릭터들의 메시지
+              </label>
+              <div className="space-y-2">
+                {characterMessages.map((message, index) => (
+                  <div key={index} className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-lg">{message.emoji}</span>
+                      <span className="text-sm font-medium text-purple-800">
+                        {message.characterId === 'fox' ? '여우' : 
+                         message.characterId === 'rabbit' ? '토끼' : 
+                         message.characterId === 'dog' ? '강아지' : '캐릭터'}
+                      </span>
+                    </div>
+                    <p className="text-sm text-purple-700">{message.message}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <Separator />
+
           {/* Save button */}
           <Button
             onClick={saveDiary}
             className="w-full bg-purple-600 hover:bg-purple-700"
-            disabled={saving || !content.trim() || !selectedEmotion}
+            disabled={saving || !content.trim() || !selectedEmotion || !title.trim()}
           >
             {saving ? (
               <>
@@ -300,52 +409,6 @@ export function DiaryPage({ accessToken }: DiaryPageProps) {
           </Button>
         </CardContent>
       </Card>
-
-      {/* Past entries */}
-      {entries.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>지난 일기들</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {entries.slice(0, 10).map((entry, index) => {
-                const emotion = allEmotions.find(e => (e.key || e.id) === entry.emotion);
-                const Icon = emotion?.icon || Calendar;
-                
-                return (
-                  <div
-                    key={`${entry.userId}-${entry.date}-${index}`}
-                    className="p-3 bg-gray-50 rounded-lg border border-gray-200"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">
-                        {new Date(entry.date).toLocaleDateString('ko-KR')}
-                      </span>
-                      {emotion ? (
-                        <Badge className={emotion.color}>
-                          {emotion.isCustom ? (
-                            <span className="text-xs mr-1">{emotion.emoji}</span>
-                          ) : (
-                            <Icon className="w-3 h-3 mr-1" />
-                          )}
-                          {emotion.label}
-                        </Badge>
-                      ) : entry.emotion ? (
-                        <Badge className="bg-gray-100 text-gray-700">
-                          <Calendar className="w-3 h-3 mr-1" />
-                          선택안함
-                        </Badge>
-                      ) : null}
-                    </div>
-                    <p className="text-sm text-gray-800">{entry.content}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

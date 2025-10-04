@@ -1,34 +1,176 @@
 import React, { useState, useEffect } from 'react';
 import { LoginPage } from './components/LoginPage';
+import { ProfileSetupPage } from './components/ProfileSetupPage';
+import { ProfilePage } from './components/ProfilePage';
+import { CharacterSelectionPage } from './components/CharacterSelectionPage';
 import { ChatPage } from './components/ChatPage';
 import { DiaryPage } from './components/DiaryPage';
 import { ReportPage } from './components/ReportPage';
+import { EmotionCarePage } from './components/EmotionCarePage';
 import { Navigation } from './components/Navigation';
+import { Footer } from './components/Footer';
+import { User } from 'lucide-react';
+import { Button } from './components/ui/button';
 import { supabase } from './utils/supabase/client';
+import { projectId, publicAnonKey } from './utils/supabase/info';
 
-type Page = 'chat' | 'diary' | 'report';
+type Page = 'chat' | 'diary' | 'report' | 'emotion-care';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [hasProfile, setHasProfile] = useState(false);
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState<Page>('chat');
+  const [selectedCharacter, setSelectedCharacter] = useState<string>('');
+  const [selectedChatRoomId, setSelectedChatRoomId] = useState<string>('');
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   useEffect(() => {
     checkAuth();
+    
+    // Listen for auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event, session ? 'session exists' : 'no session');
+        
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session?.access_token) {
+            setAccessToken(session.access_token);
+            setIsAuthenticated(true);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setAccessToken(null);
+          setIsAuthenticated(false);
+          setHasProfile(false);
+          setShowProfileSetup(false);
+          setShowProfile(false);
+          setSelectedCharacter('');
+          setCurrentPage('chat');
+        }
+      }
+    );
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated && accessToken) {
+      checkProfile();
+    }
+  }, [isAuthenticated, accessToken]);
 
   const checkAuth = async () => {
     try {
       const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error('Session error:', error);
+        return;
+      }
+      
       if (session?.access_token) {
+        console.log('Valid session found, setting token');
         setAccessToken(session.access_token);
         setIsAuthenticated(true);
+      } else {
+        console.log('No valid session found');
+        setIsAuthenticated(false);
+        setAccessToken(null);
       }
     } catch (error) {
       console.error('Auth check error:', error);
+      setIsAuthenticated(false);
+      setAccessToken(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const refreshToken = async () => {
+    try {
+      console.log('Attempting to refresh token...');
+      const { data: { session }, error } = await supabase.auth.refreshSession();
+      
+      if (error) {
+        console.error('Token refresh error:', error);
+        handleLogout();
+        return null;
+      }
+      
+      if (session?.access_token) {
+        console.log('Token refreshed successfully');
+        setAccessToken(session.access_token);
+        return session.access_token;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Token refresh failed:', error);
+      handleLogout();
+      return null;
+    }
+  };
+
+  const makeAuthenticatedRequest = async (url: string, options: RequestInit = {}) => {
+    let token = accessToken;
+    
+    // First try with current token
+    let response = await fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    
+    // If 401, try to refresh token and retry
+    if (response.status === 401) {
+      console.log('Received 401, attempting token refresh...');
+      token = await refreshToken();
+      
+      if (token) {
+        response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+      }
+    }
+    
+    return response;
+  };
+
+  const checkProfile = async () => {
+    if (!accessToken) return;
+
+    setProfileLoading(true);
+    try {
+      const response = await makeAuthenticatedRequest(
+        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/profile/check`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setHasProfile(data.hasProfile);
+        if (!data.hasProfile) {
+          setShowProfileSetup(true);
+        }
+      } else if (response.status === 401) {
+        console.error('Authentication failed even after token refresh');
+        handleLogout();
+      } else {
+        console.error('Profile check failed:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('Profile check error:', error);
+    } finally {
+      setProfileLoading(false);
     }
   };
 
@@ -42,13 +184,32 @@ export default function App() {
       await supabase.auth.signOut();
       setAccessToken(null);
       setIsAuthenticated(false);
+      setHasProfile(false);
+      setShowProfileSetup(false);
+      setShowProfile(false);
+      setSelectedCharacter('');
       setCurrentPage('chat');
     } catch (error) {
       console.error('Logout error:', error);
     }
   };
 
-  if (loading) {
+  const handleProfileSetupComplete = () => {
+    setHasProfile(true);
+    setShowProfileSetup(false);
+  };
+
+  const handleCharacterSelect = (characterId: string, chatRoomId?: string) => {
+    setSelectedCharacter(characterId);
+    setSelectedChatRoomId(chatRoomId || '');
+  };
+
+  const handleBackToCharacterSelection = () => {
+    setSelectedCharacter('');
+    setSelectedChatRoomId('');
+  };
+
+  if (loading || profileLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 flex items-center justify-center">
         <div className="text-center">
@@ -63,16 +224,58 @@ export default function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
+  // Show profile setup if user hasn't completed it
+  if (showProfileSetup && !hasProfile) {
+    return (
+      <ProfileSetupPage
+        accessToken={accessToken!}
+        onComplete={handleProfileSetupComplete}
+      />
+    );
+  }
+
+  // Show profile page if requested
+  if (showProfile) {
+    return (
+      <ProfilePage
+        accessToken={accessToken!}
+        onClose={() => setShowProfile(false)}
+      />
+    );
+  }
+
   const renderPage = () => {
     switch (currentPage) {
       case 'chat':
-        return <ChatPage accessToken={accessToken!} />;
+        if (!selectedCharacter) {
+          return (
+            <CharacterSelectionPage
+              accessToken={accessToken!}
+              onCharacterSelect={handleCharacterSelect}
+            />
+          );
+        }
+        return (
+          <ChatPage
+            accessToken={accessToken!}
+            characterId={selectedCharacter}
+            chatRoomId={selectedChatRoomId}
+            onBackToSelection={handleBackToCharacterSelection}
+          />
+        );
       case 'diary':
         return <DiaryPage accessToken={accessToken!} />;
       case 'report':
         return <ReportPage accessToken={accessToken!} />;
+      case 'emotion-care':
+        return <EmotionCarePage accessToken={accessToken!} />;
       default:
-        return <ChatPage accessToken={accessToken!} />;
+        return (
+          <CharacterSelectionPage
+            accessToken={accessToken!}
+            onCharacterSelect={handleCharacterSelect}
+          />
+        );
     }
   };
 
@@ -80,13 +283,23 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50">
       <header className="bg-white/80 backdrop-blur-sm border-b border-purple-100 sticky top-0 z-10">
         <div className="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-purple-800">마음돌봄</h1>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-gray-600 hover:text-purple-600 transition-colors"
-          >
-            로그아웃
-          </button>
+          <h1 className="text-xl font-semibold text-purple-800">BreezI</h1>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowProfile(true)}
+              className="text-gray-600 hover:text-purple-600"
+            >
+              <User className="w-4 h-4" />
+            </Button>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-gray-600 hover:text-purple-600 transition-colors"
+            >
+              로그아웃
+            </button>
+          </div>
         </div>
       </header>
 
@@ -94,7 +307,18 @@ export default function App() {
         {renderPage()}
       </main>
 
-      <Navigation currentPage={currentPage} onPageChange={setCurrentPage} />
+      <Navigation 
+        currentPage={currentPage} 
+        onPageChange={(page) => {
+          setCurrentPage(page);
+          if (page === 'chat') {
+            setSelectedCharacter('');
+            setSelectedChatRoomId('');
+          }
+        }} 
+      />
+      
+      <Footer />
     </div>
   );
 }

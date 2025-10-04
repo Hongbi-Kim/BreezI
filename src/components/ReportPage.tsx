@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { TrendingUp, Calendar, Smile, Frown, Angry, Zap, Mail, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
+import { TrendingUp, Calendar, Smile, Frown, Angry, Zap, Shell, Mail, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -38,9 +38,9 @@ interface Emotion {
 const defaultEmotions = [
   { key: 'happy', label: '기쁨', icon: Smile, color: '#fbbf24' },
   { key: 'sad', label: '슬픔', icon: Frown, color: '#60a5fa' },
-  { key: 'angry', label: '화남', icon: Angry, color: '#f87171' },
-  { key: 'anxious', label: '불안', icon: Zap, color: '#fb923c' },
-  { key: 'neutral', label: '평온', icon: Calendar, color: '#9ca3af' },
+  { key: 'angry', label: '버럭', icon: Angry, color: '#f87171' },
+  { key: 'anxious', label: '까칠', icon: Zap, color: '#fb923c' },
+  { key: 'anxious', label: '불안', icon: Shell, color: '#fb923c' },
 ];
 
 export function ReportPage({ accessToken }: ReportPageProps) {
@@ -240,7 +240,8 @@ export function ReportPage({ accessToken }: ReportPageProps) {
     if (!emotionData) return null;
     
     const counts = emotionData.emotionCounts;
-    const maxCount = Math.max(...Object.values(counts));
+    const values = Object.values(counts).map(v => Number(v));
+    const maxCount = Math.max(...values);
     const mostFrequent = Object.entries(counts).find(([_, count]) => count === maxCount);
     
     if (!mostFrequent || maxCount === 0) return null;
@@ -284,11 +285,13 @@ export function ReportPage({ accessToken }: ReportPageProps) {
     const daysInMonth = lastDay.getDate();
     const startDate = firstDay.getDay();
 
-    const days = [];
+    const days: (number | null)[] = []; // 타입 추가하고 루프 밖으로 이동
+  
     // 이전 달의 빈 칸들
     for (let i = 0; i < startDate; i++) {
-      days.push(null);
+      days.push(null); // 루프 안의 선언 제거
     }
+    
     // 현재 달의 날짜들
     for (let i = 1; i <= daysInMonth; i++) {
       days.push(i);
@@ -352,14 +355,14 @@ export function ReportPage({ accessToken }: ReportPageProps) {
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="flex items-center gap-2">
                   <Mail className="w-4 h-4" />
-                  이메일 전송
+                  카카오톡 전송
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>감정 리포트 이메일 전송</DialogTitle>
+                  <DialogTitle>감정 리포트 카카오톡 전송</DialogTitle>
                   <DialogDescription>
-                    감정 분석 리포트를 이메일로 받아보실 수 있습니다.
+                    감정 분석 리포트를 카카오톡으로 받아보실 수 있습니다.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
@@ -453,7 +456,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-purple-600" />
-              월별 감정 달력
+              감정 달력
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={previousMonth}>
@@ -542,7 +545,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
           
           {/* Calendar Legend */}
           <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-sm text-gray-600 mb-2">범례:</p>
+            {/* <p className="text-sm text-gray-600 mb-2">범례:</p> */}
             <div className="flex flex-wrap gap-3 text-xs">
               {allEmotions.map(emotion => {
                 const emotionKey = emotion.key || emotion.id;
@@ -580,71 +583,48 @@ export function ReportPage({ accessToken }: ReportPageProps) {
         </Card>
       )}
 
-      {/* Charts */}
+      {/* Pie Chart */}
       {emotionData && emotionData.totalEntries > 0 && (
-        <>
-          {/* Bar Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>감정별 빈도</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="emotion" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="count" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Pie Chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle>감정 분포</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={chartData.filter(item => item.value > 0)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={40}
-                      outerRadius={80}
-                      paddingAngle={5}
-                      dataKey="value"
-                    >
-                      {chartData.map((entry, index) => (
-                        <Cell key={`cell-${entry.name}-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              
-              {/* Legend */}
-              <div className="flex flex-wrap gap-2 mt-4 justify-center">
-                {chartData.filter(item => item.value > 0).map((item, index) => (
-                  <Badge key={`badge-${item.name}-${index}`} variant="outline" className="flex items-center gap-1">
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: item.color }}
-                    />
-                    {item.name} ({item.value})
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </>
+        <Card>
+          <CardHeader>
+            <CardTitle>감정 분포</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={chartData.filter(item => item.value > 0)}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={40}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {chartData.map((entry, index) => (
+                      <Cell key={`cell-${entry.name}-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            
+            {/* Legend */}
+            <div className="flex flex-wrap gap-2 mt-4 justify-center">
+              {chartData.filter(item => item.value > 0).map((item, index) => (
+                <Badge key={`badge-${item.name}-${index}`} variant="outline" className="flex items-center gap-1">
+                  <div
+                    className="w-3 h-3 rounded-full"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  {item.name} ({item.value})
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
