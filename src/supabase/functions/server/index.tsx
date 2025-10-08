@@ -1,16 +1,17 @@
-import { Hono } from "npm:hono";
-import { cors } from "npm:hono/cors";
-import { logger } from "npm:hono/logger";
-import { createClient } from "npm:@supabase/supabase-js";
-import * as kv from "./kv_store.tsx";
-
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { logger } from "hono/logger";
+import { serve } from "@hono/node-server";
+import { createClient } from "@supabase/supabase-js";
+import * as kv from "./kv_store.js";
 const app = new Hono();
 
 // Initialize Supabase client
 const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
 
 // Enable logger
 app.use('*', logger(console.log));
@@ -28,7 +29,7 @@ app.use(
 );
 
 // Health check endpoint
-app.get("/make-server-58f75568/health", (c) => {
+app.get("/api/health", (c) => {
   return c.json({ status: "ok" });
 });
 
@@ -49,9 +50,9 @@ async function verifyAuth(authHeader: string | null) {
 }
 
 // Profile setup endpoint
-app.post("/make-server-58f75568/profile/setup", async (c) => {
+app.post("/api/profile/setup", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -82,9 +83,9 @@ app.post("/make-server-58f75568/profile/setup", async (c) => {
 });
 
 // Get user profile
-app.get("/make-server-58f75568/profile/get", async (c) => {
+app.get("/api/profile/get", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -102,9 +103,9 @@ app.get("/make-server-58f75568/profile/get", async (c) => {
 });
 
 // Update user profile
-app.put("/make-server-58f75568/profile/update", async (c) => {
+app.put("/api/profile/update", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -140,9 +141,9 @@ app.put("/make-server-58f75568/profile/update", async (c) => {
 });
 
 // Check if user has completed profile setup
-app.get("/make-server-58f75568/profile/check", async (c) => {
+app.get("/api/profile/check", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -156,7 +157,7 @@ app.get("/make-server-58f75568/profile/check", async (c) => {
 });
 
 // Demo user setup endpoint
-app.post("/make-server-58f75568/auth/setup-demo", async (c) => {
+app.post("/api/auth/setup-demo", async (c) => {
   try {
     const demoEmail = 'demo@example.com';
     const demoPassword = 'demo123';
@@ -208,7 +209,7 @@ app.post("/make-server-58f75568/auth/setup-demo", async (c) => {
 });
 
 // User signup endpoint
-app.post("/make-server-58f75568/auth/signup", async (c) => {
+app.post("/api/auth/signup", async (c) => {
   try {
     const { email, password } = await c.req.json();
     
@@ -232,9 +233,9 @@ app.post("/make-server-58f75568/auth/signup", async (c) => {
 });
 
 // Create new chat room
-app.post("/make-server-58f75568/chat/rooms/create", async (c) => {
+app.post("/api/chat/rooms/create", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -279,9 +280,9 @@ app.post("/make-server-58f75568/chat/rooms/create", async (c) => {
 });
 
 // Get all chat rooms for user
-app.get("/make-server-58f75568/chat/rooms", async (c) => {
+app.get("/api/chat/rooms", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -308,9 +309,9 @@ app.get("/make-server-58f75568/chat/rooms", async (c) => {
 });
 
 // Update chat room title
-app.put("/make-server-58f75568/chat/rooms/:roomId/title", async (c) => {
+app.put("/api/chat/rooms/:roomId/title", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -345,9 +346,9 @@ app.put("/make-server-58f75568/chat/rooms/:roomId/title", async (c) => {
 });
 
 // Delete chat room
-app.delete("/make-server-58f75568/chat/rooms/:roomId", async (c) => {
+app.delete("/api/chat/rooms/:roomId", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -375,9 +376,9 @@ app.delete("/make-server-58f75568/chat/rooms/:roomId", async (c) => {
 });
 
 // Chat message endpoint
-app.post("/make-server-58f75568/chat/send", async (c) => {
+app.post("/api/chat/send", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -496,9 +497,9 @@ app.post("/make-server-58f75568/chat/send", async (c) => {
 });
 
 // Get chat history
-app.get("/make-server-58f75568/chat/history", async (c) => {
+app.get("/api/chat/history", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -524,9 +525,9 @@ app.get("/make-server-58f75568/chat/history", async (c) => {
 });
 
 // Get recent chats for character selection
-app.get("/make-server-58f75568/chat/recent", async (c) => {
+app.get("/api/chat/recent", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -567,9 +568,9 @@ app.get("/make-server-58f75568/chat/recent", async (c) => {
 });
 
 // Save diary entry
-app.post("/make-server-58f75568/diary/save", async (c) => {
+app.post("/api/diary/save", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -606,9 +607,9 @@ app.post("/make-server-58f75568/diary/save", async (c) => {
 });
 
 // Get today's diary entry
-app.get("/make-server-58f75568/diary/today", async (c) => {
+app.get("/api/diary/today", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -629,9 +630,9 @@ app.get("/make-server-58f75568/diary/today", async (c) => {
 });
 
 // Get character messages for today
-app.get("/make-server-58f75568/diary/character-messages", async (c) => {
+app.get("/api/diary/character-messages", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -701,9 +702,9 @@ app.get("/make-server-58f75568/diary/character-messages", async (c) => {
 });
 
 // Generate diary draft from today's chat
-app.get("/make-server-58f75568/diary/generate", async (c) => {
+app.get("/api/diary/generate", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -754,9 +755,9 @@ app.get("/make-server-58f75568/diary/generate", async (c) => {
 });
 
 // Get emotion report data
-app.get("/make-server-58f75568/report/emotion", async (c) => {
+app.get("/api/report/emotion", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -817,9 +818,9 @@ app.get("/make-server-58f75568/report/emotion", async (c) => {
 });
 
 // Get diary entries
-app.get("/make-server-58f75568/diary/entries", async (c) => {
+app.get("/api/diary/entries", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -840,9 +841,9 @@ app.get("/make-server-58f75568/diary/entries", async (c) => {
 });
 
 // Get monthly emotions for calendar
-app.get("/make-server-58f75568/report/monthly", async (c) => {
+app.get("/api/report/monthly", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -878,9 +879,9 @@ app.get("/make-server-58f75568/report/monthly", async (c) => {
 });
 
 // Get custom emotions for user
-app.get("/make-server-58f75568/emotions/custom", async (c) => {
+app.get("/api/emotions/custom", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -896,9 +897,9 @@ app.get("/make-server-58f75568/emotions/custom", async (c) => {
 });
 
 // Add custom emotion
-app.post("/make-server-58f75568/emotions/add", async (c) => {
+app.post("/api/emotions/add", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -930,9 +931,9 @@ app.post("/make-server-58f75568/emotions/add", async (c) => {
 });
 
 // Update custom emotion
-app.put("/make-server-58f75568/emotions/:id", async (c) => {
+app.put("/api/emotions/:id", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -968,9 +969,9 @@ app.put("/make-server-58f75568/emotions/:id", async (c) => {
 });
 
 // Delete custom emotion
-app.delete("/make-server-58f75568/emotions/:id", async (c) => {
+app.delete("/api/emotions/:id", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -1009,9 +1010,9 @@ app.delete("/make-server-58f75568/emotions/:id", async (c) => {
 });
 
 // Send email report
-app.post("/make-server-58f75568/report/email", async (c) => {
+app.post("/api/report/email", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -1102,9 +1103,9 @@ ${emotionSummary}
 });
 
 // Get recommended emotion keywords based on user's chat/diary patterns
-app.get("/make-server-58f75568/emotion-care/recommended-keywords", async (c) => {
+app.get("/api/emotion-care/recommended-keywords", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -1156,9 +1157,9 @@ app.get("/make-server-58f75568/emotion-care/recommended-keywords", async (c) => 
 });
 
 // Get today's mission for emotion care
-app.get("/make-server-58f75568/emotion-care/today-mission", async (c) => {
+app.get("/api/emotion-care/today-mission", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -1225,9 +1226,9 @@ app.get("/make-server-58f75568/emotion-care/today-mission", async (c) => {
 });
 
 // Get emotion care content (breathing exercises, videos, tips)
-app.post("/make-server-58f75568/emotion-care/content", async (c) => {
+app.post("/api/emotion-care/content", async (c) => {
   try {
-    const userId = await verifyAuth(c.req.header('Authorization'));
+    const userId = await verifyAuth(c.req.header('Authorization') ?? null);
     if (!userId) {
       return c.json({ error: "Unauthorized" }, 401);
     }
@@ -1311,4 +1312,4 @@ app.post("/make-server-58f75568/emotion-care/content", async (c) => {
   }
 });
 
-Deno.serve(app.fetch);
+serve({ fetch: app.fetch });
