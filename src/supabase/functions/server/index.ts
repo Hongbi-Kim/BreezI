@@ -181,7 +181,7 @@ app.post("/api/auth/setup-demo", async (c) => {
     if (!userId && error?.message.includes('User already registered')) {
       // Get existing user ID
       const { data: existingUser } = await supabase.auth.admin.listUsers();
-      const demoUser = existingUser?.users?.find(u => u.email === demoEmail);
+      const demoUser = existingUser?.users?.find((u: { email: string }) => u.email === demoEmail);
       userId = demoUser?.id;
     }
 

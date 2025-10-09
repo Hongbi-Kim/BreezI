@@ -353,10 +353,10 @@ export function ReportPage({ accessToken }: ReportPageProps) {
             </div>
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                {/* <Button variant="outline" size="sm" className="flex items-center gap-2">
                   <Mail className="w-4 h-4" />
                   카카오톡 전송
-                </Button>
+                </Button> */}
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
