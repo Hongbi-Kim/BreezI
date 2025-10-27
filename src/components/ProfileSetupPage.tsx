@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface ProfileSetupPageProps {
   accessToken: string;
@@ -24,17 +25,72 @@ export function ProfileSetupPage({ accessToken, onComplete }: ProfileSetupPagePr
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [nicknameChecking, setNicknameChecking] = useState(false);
+  const [nicknameAvailable, setNicknameAvailable] = useState<boolean | null>(null);
 
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 80 }, (_, i) => currentYear - i);
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
 
+  const checkNickname = async (nickname: string) => {
+    if (!nickname.trim()) {
+      setNicknameAvailable(null);
+      return;
+    }
+
+    setNicknameChecking(true);
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/profile/check-nickname`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ nickname }),
+        }
+      );
+
+      if (response.status === 401) {
+        // Unauthorized - silently fail, user might not be fully authenticated yet
+        console.log('Authentication required for nickname check');
+        setNicknameAvailable(null);
+        return;
+      }
+
+      const data = await response.json();
+      setNicknameAvailable(data.available);
+    } catch (error) {
+      console.error('Nickname check error:', error);
+      setNicknameAvailable(null);
+    } finally {
+      setNicknameChecking(false);
+    }
+  };
+
+  // Debounce nickname check
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      if (formData.nickname) {
+        checkNickname(formData.nickname);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.nickname]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.nickname || !formData.birthYear || !formData.birthMonth || !formData.birthDay) {
-      setError('필수 항목을 모두 입력해주세요.');
+      toast.error('필수 항목을 모두 입력해주세요.');
+      return;
+    }
+
+    if (nicknameAvailable === false) {
+      toast.error('사용 불가능한 닉네임입니다. 다른 닉네임을 선택해주세요.');
       return;
     }
 
@@ -42,6 +98,9 @@ export function ProfileSetupPage({ accessToken, onComplete }: ProfileSetupPagePr
     setError('');
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/profile/setup`,
         {
@@ -55,18 +114,28 @@ export function ProfileSetupPage({ accessToken, onComplete }: ProfileSetupPagePr
             birthDate: `${formData.birthYear}-${formData.birthMonth.padStart(2, '0')}-${formData.birthDay.padStart(2, '0')}`,
             characterInfo: formData.characterInfo,
           }),
+          signal: controller.signal,
         }
       );
+      
+      clearTimeout(timeoutId);
 
       if (response.ok) {
-        onComplete();
+        toast.success('✨ 프로필 설정이 완료되었습니다!');
+        setTimeout(() => onComplete(), 500);
       } else {
         const data = await response.json();
-        setError(data.error || '프로필 설정에 실패했습니다.');
+        const errorMsg = data.error || '프로필 설정에 실패했습니다.';
+        setError(errorMsg);
+        toast.error(errorMsg);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Profile setup error:', error);
-      setError('프로필 설정 중 오류가 발생했습니다.');
+      const errorMsg = error.name === 'AbortError' 
+        ? '요청 시간이 초과되었습니다. 다시 시도해주세요.'
+        : '프로필 설정 중 오류가 발생했습니다. 네트워크를 확인해주세요.';
+      setError(errorMsg);
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -74,7 +143,7 @@ export function ProfileSetupPage({ accessToken, onComplete }: ProfileSetupPagePr
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 p-4">
-      <div className="max-w-md mx-auto">
+      <div className="max-w-3xl mx-auto">
         <div className="text-center mb-8">
           <div className="bg-purple-100 rounded-full p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <User className="w-8 h-8 text-purple-600" />
@@ -95,13 +164,36 @@ export function ProfileSetupPage({ accessToken, onComplete }: ProfileSetupPagePr
               {/* 닉네임 */}
               <div className="space-y-2">
                 <Label htmlFor="nickname">닉네임 *</Label>
-                <Input
-                  id="nickname"
-                  value={formData.nickname}
-                  onChange={(e) => setFormData(prev => ({ ...prev, nickname: e.target.value }))}
-                  placeholder="사용하실 닉네임을 입력해주세요"
-                  required
-                />
+                <div className="relative">
+                  <Input
+                    id="nickname"
+                    value={formData.nickname}
+                    onChange={(e) => {
+                      setFormData(prev => ({ ...prev, nickname: e.target.value }));
+                      setNicknameAvailable(null);
+                    }}
+                    placeholder="사용하실 닉네임을 입력해주세요"
+                    required
+                    className={
+                      nicknameAvailable === false 
+                        ? 'border-red-500' 
+                        : nicknameAvailable === true 
+                        ? 'border-green-500' 
+                        : ''
+                    }
+                  />
+                  {nicknameChecking && (
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+                    </div>
+                  )}
+                </div>
+                {nicknameAvailable === false && (
+                  <p className="text-sm text-red-600">이미 사용 중인 닉네임입니다</p>
+                )}
+                {nicknameAvailable === true && (
+                  <p className="text-sm text-green-600">사용 가능한 닉네임입니다</p>
+                )}
               </div>
 
               {/* 생년월일 */}
@@ -184,7 +276,7 @@ export function ProfileSetupPage({ accessToken, onComplete }: ProfileSetupPagePr
 
               <Button
                 type="submit"
-                disabled={loading}
+                disabled={loading || nicknameChecking || nicknameAvailable === false}
                 className="w-full bg-purple-600 hover:bg-purple-700"
               >
                 {loading ? '설정 중...' : '프로필 설정 완료'}

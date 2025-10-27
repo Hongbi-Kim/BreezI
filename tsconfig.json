@@ -1,15 +1,17 @@
 {
-    "compilerOptions": {
-      "target": "ES2020",
-      "module": "CommonJS",
-      "jsx": "react-jsx",           // ✅ JSX 파서 추가
-      "esModuleInterop": true,
-      "skipLibCheck": true,
-      "noImplicitAny": false,       // ✅ any 허용
-      "strict": false,              // ✅ 엄격모드 해제
-      "forceConsistentCasingInFileNames": true,
-      "resolveJsonModule": true
-    },
-    "include": ["src/**/*"]
-  }
-  
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noImplicitAny": false,
+    "strict": false,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "bundler",
+    "types": ["node", "vite/client"],
+    "lib": ["ES2020", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/**/*", "tsconfig.edge.json"]
+}

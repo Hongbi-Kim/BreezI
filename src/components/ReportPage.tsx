@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { TrendingUp, Calendar, Smile, Frown, Angry, Zap, Shell, Mail, ChevronLeft, ChevronRight, BookOpen } from 'lucide-react';
+import { TrendingUp, Calendar, Smile, Frown, Angry, Zap, Share2, ChevronLeft, ChevronRight, BookOpen, Heart, AlertTriangle, Sparkles } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Input } from './ui/input';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner';
+import { ReportPageSkeleton } from './LoadingSkeletons';
+import { fetchWithCache, createCacheKey, cache } from '../utils/cache';
 
 interface EmotionData {
   period: string;
@@ -19,10 +22,16 @@ interface DailyEmotion {
   date: string;
   emotion: string;
   diary?: string;
+  title?: string;
+  compliment?: string;
+  regrets?: string;
+  missionTitle?: string;
+  missionCompleted?: boolean;
 }
 
 interface ReportPageProps {
   accessToken: string;
+  onEmotionUpdate?: () => void;
 }
 
 interface Emotion {
@@ -38,39 +47,44 @@ interface Emotion {
 const defaultEmotions = [
   { key: 'happy', label: '기쁨', icon: Smile, color: '#fbbf24' },
   { key: 'sad', label: '슬픔', icon: Frown, color: '#60a5fa' },
-  { key: 'angry', label: '버럭', icon: Angry, color: '#f87171' },
-  { key: 'anxious', label: '까칠', icon: Zap, color: '#fb923c' },
-  { key: 'anxious', label: '불안', icon: Shell, color: '#fb923c' },
+  { key: 'angry', label: '화남', icon: Angry, color: '#f87171' },
+  { key: 'anxious', label: '불안', icon: Zap, color: '#fb923c' },
 ];
 
-export function ReportPage({ accessToken }: ReportPageProps) {
+export function ReportPage({ accessToken, onEmotionUpdate }: ReportPageProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week');
   const [emotionData, setEmotionData] = useState<EmotionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [monthlyEmotions, setMonthlyEmotions] = useState<DailyEmotion[]>([]);
-  const [emailAddress, setEmailAddress] = useState('');
-  const [emailLoading, setEmailLoading] = useState(false);
-  const [emailError, setEmailError] = useState('');
-  const [emailSuccess, setEmailSuccess] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState('');
+  const [shareSuccess, setShareSuccess] = useState('');
   const [allEmotions, setAllEmotions] = useState<Emotion[]>(defaultEmotions);
+  const [aiInsight, setAiInsight] = useState<string>('');
 
   useEffect(() => {
     loadAllEmotions();
     loadEmotionReport();
     loadMonthlyEmotions();
+    loadAIInsight();
   }, [selectedPeriod, currentDate]);
 
   const loadAllEmotions = async () => {
     try {
+      console.log('Loading custom emotions with token:', accessToken ? 'token exists' : 'no token');
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/emotions/custom`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
           },
         }
       );
+
+      console.log('Custom emotions response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
@@ -110,93 +124,206 @@ export function ReportPage({ accessToken }: ReportPageProps) {
     }
   };
 
-  const loadEmotionReport = async () => {
+  const loadEmotionReport = async (retryCount = 0) => {
     setLoading(true);
     try {
+      console.log('Loading emotion report with token:', accessToken ? 'token exists' : 'no token');
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // Reduced to 10 seconds
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/report/emotion?period=${selectedPeriod}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
           },
+          signal: controller.signal,
         }
       );
+      
+      clearTimeout(timeoutId);
+      console.log('Emotion report response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Loaded emotion report data:', data);
         setEmotionData(data);
       } else {
-        console.error('Failed to load emotion report');
+        const errorText = await response.text();
+        console.error('Failed to load emotion report:', response.status, response.statusText, errorText);
+        if (response.status === 401) {
+          console.error('Authentication failed for emotion report');
+          toast.error('로그인이 필요합니다.');
+        } else if (response.status >= 500 && retryCount < 2) {
+          toast.error('서버 오류가 발생했습니다. 다시 시도합니다...');
+          setTimeout(() => loadEmotionReport(retryCount + 1), 1000);
+        }
       }
-    } catch (error) {
-      console.error('Error loading emotion report:', error);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error('Emotion report request timed out');
+        toast.error('리포트를 불러오는 시간이 초과되었습니다.');
+      } else {
+        console.error('Error loading emotion report:', error);
+        if (retryCount < 2) {
+          setTimeout(() => loadEmotionReport(retryCount + 1), 1000);
+        } else {
+          toast.error('리포트를 불러올 수 없습니다. 네트워크를 확인해주세요.');
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const loadMonthlyEmotions = async () => {
+  const loadMonthlyEmotions = async (retryCount = 0) => {
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
+      
+      console.log('Loading monthly emotions for:', year, month);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // Reduced to 10 seconds
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/report/monthly?year=${year}&month=${month}`,
         {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
           },
+          signal: controller.signal,
         }
       );
+      
+      clearTimeout(timeoutId);
+      console.log('Monthly emotions response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Loaded monthly emotions data:', data);
         setMonthlyEmotions(data.emotions || []);
       } else {
-        console.error('Failed to load monthly emotions');
+        const errorText = await response.text();
+        console.error('Failed to load monthly emotions:', response.status, response.statusText, errorText);
+        if (response.status === 401) {
+          console.error('Authentication failed for monthly emotions');
+          toast.error('로그인이 필요합니다.');
+        } else if (response.status >= 500 && retryCount < 2) {
+          setTimeout(() => loadMonthlyEmotions(retryCount + 1), 1000);
+        }
+        setMonthlyEmotions([]);
       }
-    } catch (error) {
-      console.error('Error loading monthly emotions:', error);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error('Monthly emotions request timed out');
+        toast.error('월별 감정 데이터를 불러오는 시간이 초과되었습니다.');
+      } else {
+        console.error('Error loading monthly emotions:', error);
+        if (retryCount < 2) {
+          setTimeout(() => loadMonthlyEmotions(retryCount + 1), 1000);
+        }
+      }
+      setMonthlyEmotions([]);
     }
   };
 
-  const sendEmailReport = async () => {
-    if (!emailAddress.trim()) {
-      setEmailError('이메일 주소를 입력해주세요.');
-      return;
-    }
-
-    setEmailLoading(true);
-    setEmailError('');
-    setEmailSuccess('');
-
+  const loadAIInsight = async () => {
     try {
+      console.log('Loading AI insight...');
       const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/report/email`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/report/insight?period=${selectedPeriod}`,
         {
-          method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
             'Authorization': `Bearer ${accessToken}`,
           },
-          body: JSON.stringify({
-            email: emailAddress,
-            period: selectedPeriod,
-          }),
         }
       );
 
       if (response.ok) {
-        setEmailSuccess('감정 리포트가 이메일로 전송되었습니다!');
-        setEmailAddress('');
-      } else {
         const data = await response.json();
-        setEmailError(data.error || '이메일 전송에 실패했습니다.');
+        console.log('AI insight loaded:', data.insight);
+        setAiInsight(data.insight || '');
+      } else {
+        console.error('Failed to load AI insight:', response.status);
+        // Set fallback insight on error
+        setAiInsight('');
       }
     } catch (error) {
-      console.error('Error sending email report:', error);
-      setEmailError('이메일 전송 중 오류가 발생했습니다.');
+      console.error('Error loading AI insight:', error);
+      setAiInsight('');
+    }
+  };
+
+  const shareToKakaoTalk = async () => {
+    setShareLoading(true);
+    setShareError('');
+    setShareSuccess('');
+
+    try {
+      // 리포트 요약 생성
+      const mostFrequent = getMostFrequentEmotion();
+      const insight = getEmotionInsight();
+      
+      const shareText = `🌸 BreezI 감정 리포트 📊
+
+📅 기간: ${selectedPeriod === 'week' ? '최근 1주일' : '최근 1개월'}
+📝 총 일기 수: ${emotionData?.totalEntries || 0}개
+💭 가장 많은 감정: ${mostFrequent ? mostFrequent.label : '없음'}
+
+🔍 분석 결과:
+${insight}
+
+#BreezI #감정일기 #심리케어`;
+
+      // 카카오톡 공유 (Web Share API 사용)
+      if (navigator.share) {
+        await navigator.share({
+          title: 'BreezI 감정 리포트',
+          text: shareText,
+        });
+        setShareSuccess('카카오톡으로 공유되었습니다!');
+      } else {
+        // Web Share API를 지원하지 않는 경우 클립보드에 복사
+        await navigator.clipboard.writeText(shareText);
+        setShareSuccess('리포트가 클립보드에 복사되었습니다. 카카오톡에 붙여넣기 해주세요!');
+      }
+    } catch (error) {
+      console.error('Error sharing report:', error);
+      
+      // 공유나 클립보드 복사에 실패한 경우 텍스트 선택
+      try {
+        const mostFrequent = getMostFrequentEmotion();
+        const insight = getEmotionInsight();
+        
+        const shareText = `🌸 BreezI 감정 리포트 📊
+
+📅 기간: ${selectedPeriod === 'week' ? '최근 1주일' : '최근 1개월'}
+📝 총 일기 수: ${emotionData?.totalEntries || 0}개
+💭 가장 많은 감정: ${mostFrequent ? mostFrequent.label : '없음'}
+
+🔍 분석 결과:
+${insight}
+
+#BreezI #감정일기 #심리케어`;
+
+        // 임시 textarea를 만들어서 텍스트 복사
+        const textarea = document.createElement('textarea');
+        textarea.value = shareText;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        
+        setShareSuccess('리포트가 클립보드에 복사되었습니다. 카카오톡에 붙여넣기 해주세요!');
+      } catch (fallbackError) {
+        setShareError('공유에 실패했습니다. 다시 시도해주세요.');
+      }
     } finally {
-      setEmailLoading(false);
+      setShareLoading(false);
     }
   };
 
@@ -240,8 +367,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
     if (!emotionData) return null;
     
     const counts = emotionData.emotionCounts;
-    const values = Object.values(counts).map(v => Number(v));
-    const maxCount = Math.max(...values);
+    const maxCount = Math.max(...Object.values(counts) as number[]);
     const mostFrequent = Object.entries(counts).find(([_, count]) => count === maxCount);
     
     if (!mostFrequent || maxCount === 0) return null;
@@ -251,6 +377,12 @@ export function ReportPage({ accessToken }: ReportPageProps) {
   };
 
   const getEmotionInsight = () => {
+    // Use AI insight if available
+    if (aiInsight) {
+      return aiInsight;
+    }
+    
+    // Fallback to rule-based insight
     if (!emotionData || emotionData.totalEntries === 0) {
       return "아직 충분한 데이터가 없어요. 일기를 더 작성해보세요!";
     }
@@ -264,7 +396,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
     }
 
     // Calculate positive vs negative based on default emotions
-    const positiveCount = (counts.happy || 0) + (counts.neutral || 0);
+    const positiveCount = (counts.happy || 0);
     const negativeCount = (counts.sad || 0) + (counts.angry || 0) + (counts.anxious || 0);
     const positiveRatio = positiveCount / total;
 
@@ -285,13 +417,11 @@ export function ReportPage({ accessToken }: ReportPageProps) {
     const daysInMonth = lastDay.getDate();
     const startDate = firstDay.getDay();
 
-    const days: (number | null)[] = []; // 타입 추가하고 루프 밖으로 이동
-  
+    const days = [];
     // 이전 달의 빈 칸들
     for (let i = 0; i < startDate; i++) {
-      days.push(null); // 루프 안의 선언 제거
+      days.push(null);
     }
-    
     // 현재 달의 날짜들
     for (let i = 1; i <= daysInMonth; i++) {
       days.push(i);
@@ -341,8 +471,16 @@ export function ReportPage({ accessToken }: ReportPageProps) {
   const mostFrequent = getMostFrequentEmotion();
   const insight = getEmotionInsight();
 
+  if (loading) {
+    return (
+      <div className="p-4 space-y-6 pb-24">
+        <ReportPageSkeleton />
+      </div>
+    );
+  }
+
   return (
-    <div className="p-4 space-y-6">
+    <div className="p-4 space-y-6 pb-24">
       {/* Period selector */}
       <Card>
         <CardHeader>
@@ -353,49 +491,44 @@ export function ReportPage({ accessToken }: ReportPageProps) {
             </div>
             <Dialog>
               <DialogTrigger asChild>
-                {/* <Button variant="outline" size="sm" className="flex items-center gap-2">
-                  <Mail className="w-4 h-4" />
-                  카카오톡 전송
-                </Button> */}
+                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                  <Share2 className="w-4 h-4" />
+                  카카오톡 공유
+                </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>감정 리포트 카카오톡 전송</DialogTitle>
+                  <DialogTitle>감정 리포트 카카오톡 공유</DialogTitle>
                   <DialogDescription>
-                    감정 분석 리포트를 카카오톡으로 받아보실 수 있습니다.
+                    감정 분석 리포트를 카카오톡으로 공유할 수 있습니다.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      이메일 주소
-                    </label>
-                    <Input
-                      type="email"
-                      value={emailAddress}
-                      onChange={(e) => setEmailAddress(e.target.value)}
-                      placeholder="리포트를 받을 이메일 주소"
-                    />
+                  <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <p className="text-sm text-yellow-800">
+                      📱 리포트 요약본이 카카오톡으로 공유됩니다. 
+                      친구나 가족과 나의 감정 상태를 공유해보세요!
+                    </p>
                   </div>
                   
-                  {emailError && (
+                  {shareError && (
                     <div className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
-                      {emailError}
+                      {shareError}
                     </div>
                   )}
                   
-                  {emailSuccess && (
+                  {shareSuccess && (
                     <div className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
-                      {emailSuccess}
+                      {shareSuccess}
                     </div>
                   )}
 
                   <Button
-                    onClick={sendEmailReport}
-                    disabled={emailLoading}
-                    className="w-full bg-purple-600 hover:bg-purple-700"
+                    onClick={shareToKakaoTalk}
+                    disabled={shareLoading || !emotionData}
+                    className="w-full bg-yellow-400 hover:bg-yellow-500 text-yellow-900"
                   >
-                    {emailLoading ? '전송 중...' : '리포트 전송하기'}
+                    {shareLoading ? '공유 중...' : '📱 카카오톡으로 공유하기'}
                   </Button>
                 </div>
               </DialogContent>
@@ -456,7 +589,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
           <CardTitle className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Calendar className="w-5 h-5 text-purple-600" />
-              감정 달력
+              월별 감정 달력
             </div>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={previousMonth}>
@@ -504,7 +637,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
                                   <BookOpen className="w-3 h-3 text-purple-600" />
                                 </button>
                               </DialogTrigger>
-                              <DialogContent>
+                              <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
                                 <DialogHeader>
                                   <DialogTitle>
                                     {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월 {day}일 일기
@@ -514,6 +647,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
                                   </DialogDescription>
                                 </DialogHeader>
                                 <div className="space-y-4">
+                                  {/* 감정 */}
                                   <div className="flex items-center gap-2">
                                     {EmotionIcon && (
                                       <EmotionIcon 
@@ -525,9 +659,74 @@ export function ReportPage({ accessToken }: ReportPageProps) {
                                       {allEmotions.find(e => (e.key || e.id) === dayEmotion.emotion)?.label || '알 수 없음'}
                                     </span>
                                   </div>
-                                  <div className="p-4 bg-gray-50 rounded-lg">
-                                    <p className="text-gray-800">{dayEmotion.diary}</p>
-                                  </div>
+
+                                  {/* 제목 */}
+                                  {dayEmotion.title && (
+                                    <div>
+                                      <h4 className="font-medium text-gray-700 mb-2">📝 제목</h4>
+                                      <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                                        <p className="text-gray-800">{dayEmotion.title}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 한 줄 일기 */}
+                                  {dayEmotion.diary && (
+                                    <div>
+                                      <h4 className="font-medium text-gray-700 mb-2">💭 한 줄 일기</h4>
+                                      <div className="p-3 bg-gray-50 rounded-lg">
+                                        <p className="text-gray-800">{dayEmotion.diary}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 잘한 점 */}
+                                  {dayEmotion.compliment && (
+                                    <div>
+                                      <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                        <Heart className="w-4 h-4 text-green-500" />
+                                        잘한 점
+                                      </h4>
+                                      <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                                        <p className="text-gray-800">{dayEmotion.compliment}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 아쉬운 점 */}
+                                  {dayEmotion.regrets && (
+                                    <div>
+                                      <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                        <AlertTriangle className="w-4 h-4 text-orange-500" />
+                                        아쉬운 점
+                                      </h4>
+                                      <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                                        <p className="text-gray-800">{dayEmotion.regrets}</p>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 오늘의 미션 */}
+                                  {dayEmotion.missionTitle && (
+                                    <div>
+                                      <h4 className="font-medium text-gray-700 mb-2 flex items-center gap-1">
+                                        <Sparkles className="w-4 h-4 text-purple-500" />
+                                        오늘의 미션
+                                      </h4>
+                                      <div className={`p-3 rounded-lg border ${dayEmotion.missionCompleted ? 'bg-green-50 border-green-200' : 'bg-purple-50 border-purple-200'}`}>
+                                        <div className="flex items-center justify-between">
+                                          <p className={`text-gray-800 ${dayEmotion.missionCompleted ? 'line-through' : ''}`}>
+                                            {dayEmotion.missionTitle}
+                                          </p>
+                                          {dayEmotion.missionCompleted && (
+                                            <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                                              완료
+                                            </Badge>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </DialogContent>
                             </Dialog>
@@ -545,7 +744,7 @@ export function ReportPage({ accessToken }: ReportPageProps) {
           
           {/* Calendar Legend */}
           <div className="mt-4 pt-4 border-t border-gray-200">
-            {/* <p className="text-sm text-gray-600 mb-2">범례:</p> */}
+            <p className="text-sm text-gray-600 mb-2">범례:</p>
             <div className="flex flex-wrap gap-3 text-xs">
               {allEmotions.map(emotion => {
                 const emotionKey = emotion.key || emotion.id;
@@ -573,11 +772,21 @@ export function ReportPage({ accessToken }: ReportPageProps) {
       {emotionData && (
         <Card>
           <CardHeader>
-            <CardTitle>감정 분석 인사이트</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-600" />
+              감정 분석 인사이트
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="p-4 bg-purple-50 rounded-lg border border-purple-200">
-              <p className="text-gray-800">{insight}</p>
+              {!aiInsight ? (
+                <div className="flex items-center gap-2 text-gray-600">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600"></div>
+                  <p>AI가 감정을 분석하는 중...</p>
+                </div>
+              ) : (
+                <p className="text-gray-800">{insight}</p>
+              )}
             </div>
           </CardContent>
         </Card>

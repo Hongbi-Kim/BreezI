@@ -5,6 +5,7 @@ import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from './ui/dialog';
 import { Card, CardContent } from './ui/card';
 import { projectId } from '../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface CustomEmotion {
   id: string;
@@ -66,7 +67,7 @@ export function EmotionManager({ accessToken, onEmotionChange }: EmotionManagerP
 
   const addEmotion = async () => {
     if (!newEmotion.label.trim() || !newEmotion.emoji.trim()) {
-      alert('기분 이름과 이모티콘을 입력해주세요.');
+      toast.error('기분 이름과 이모티콘을 입력해주세요.');
       return;
     }
 
@@ -88,12 +89,13 @@ export function EmotionManager({ accessToken, onEmotionChange }: EmotionManagerP
         setNewEmotion({ label: '', emoji: '', color: colorOptions[0], isPositive: true });
         loadCustomEmotions();
         onEmotionChange();
+        toast.success('✅ 새로운 기분이 추가되었습니다!');
       } else {
-        alert('기분 추가에 실패했습니다.');
+        toast.error('기분 추가에 실패했습니다.');
       }
     } catch (error) {
       console.error('Error adding emotion:', error);
-      alert('기분 추가 중 오류가 발생했습니다.');
+      toast.error('기분 추가 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -101,7 +103,7 @@ export function EmotionManager({ accessToken, onEmotionChange }: EmotionManagerP
 
   const updateEmotion = async () => {
     if (!editingEmotion || !editingEmotion.label.trim() || !editingEmotion.emoji.trim()) {
-      alert('기분 이름과 이모티콘을 입력해주세요.');
+      toast.error('기분 이름과 이모티콘을 입력해주세요.');
       return;
     }
 
@@ -128,12 +130,13 @@ export function EmotionManager({ accessToken, onEmotionChange }: EmotionManagerP
         setEditingEmotion(null);
         loadCustomEmotions();
         onEmotionChange();
+        toast.success('✅ 기분이 수정되었습니다!');
       } else {
-        alert('기분 수정에 실패했습니다.');
+        toast.error('기분 수정에 실패했습니다.');
       }
     } catch (error) {
       console.error('Error updating emotion:', error);
-      alert('기분 수정 중 오류가 발생했습니다.');
+      toast.error('기분 수정 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }
@@ -159,12 +162,13 @@ export function EmotionManager({ accessToken, onEmotionChange }: EmotionManagerP
       if (response.ok) {
         loadCustomEmotions();
         onEmotionChange();
+        toast.success('✅ 기분이 삭제되었습니다');
       } else {
-        alert('기분 삭제에 실패했습니다.');
+        toast.error('기분 삭제에 실패했습니다.');
       }
     } catch (error) {
       console.error('Error deleting emotion:', error);
-      alert('기분 삭제 중 오류가 발생했습니다.');
+      toast.error('기분 삭제 중 오류가 발생했습니다.');
     } finally {
       setLoading(false);
     }

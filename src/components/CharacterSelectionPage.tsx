@@ -7,6 +7,7 @@ import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { Input } from './ui/input';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface Character {
   id: string;
@@ -30,6 +31,7 @@ interface ChatRoom {
 interface CharacterSelectionPageProps {
   accessToken: string;
   onCharacterSelect: (characterId: string, chatRoomId?: string) => void;
+  onTokenRefresh?: () => Promise<string | null>;
 }
 
 const characters: Character[] = [
@@ -75,34 +77,89 @@ const characters: Character[] = [
   },
 ];
 
-export function CharacterSelectionPage({ accessToken, onCharacterSelect }: CharacterSelectionPageProps) {
+export function CharacterSelectionPage({ accessToken, onCharacterSelect, onTokenRefresh }: CharacterSelectionPageProps) {
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCharacterSelection, setShowCharacterSelection] = useState(false);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [currentToken, setCurrentToken] = useState(accessToken);
 
   useEffect(() => {
-    loadChatRooms();
-  }, []);
+    setCurrentToken(accessToken);
+  }, [accessToken]);
 
-  const loadChatRooms = async () => {
+  useEffect(() => {
+    // Only load chat rooms if we have a token
+    if (currentToken) {
+      console.log('Token available, loading chat rooms');
+      loadChatRooms();
+    } else {
+      console.log('No token available yet, waiting...');
+    }
+  }, [currentToken]);
+
+  const loadChatRooms = async (retryWithRefresh = true) => {
     try {
+      if (!currentToken) {
+        console.error('No access token available for loading chat rooms');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('Loading chat rooms with token:', currentToken ? 'token exists' : 'no token');
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/chat/rooms`,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
+            'Content-Type': 'application/json',
           },
+          signal: controller.signal,
         }
       );
+      
+      clearTimeout(timeoutId);
+
+      console.log('Chat rooms response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Loaded chat rooms:', data);
         setChatRooms(data.chatRooms || []);
+      } else {
+        if (response.status === 401) {
+          console.log('Authentication required for chat rooms');
+          
+          if (retryWithRefresh && onTokenRefresh) {
+            console.log('Attempting token refresh...');
+            const newToken = await onTokenRefresh();
+            if (newToken) {
+              setCurrentToken(newToken);
+              // Retry with new token
+              return loadChatRooms(false);
+            } else {
+              console.log('Token refresh failed, user will be logged out');
+            }
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('Failed to load chat rooms:', response.status, response.statusText, errorText);
+        }
+        setChatRooms([]);
       }
     } catch (error) {
-      console.error('Failed to load chat rooms:', error);
+      if (error.name === 'AbortError') {
+        console.error('Chat rooms request timed out');
+        setChatRooms([]);
+      } else {
+        console.error('Failed to load chat rooms:', error);
+        setChatRooms([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -116,24 +173,48 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
     }
 
     try {
+      const character = characters.find(c => c.id === characterId);
+      const title = `${character?.name || '캐릭터'}와의 대화`;
+      
+      console.log('Creating chat room with:', { characterId, title });
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/chat/rooms/create`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
           },
           body: JSON.stringify({
             characterId,
-            title: `${characters.find(c => c.id === characterId)?.name}와의 대화`
+            title
           }),
         }
       );
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Created chat room:', data);
+        // Reload chat rooms to include the new one
+        await loadChatRooms();
         onCharacterSelect(characterId, data.chatRoomId);
+        setShowCharacterSelection(false);
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Failed to create chat room:', response.status, errorData);
+        
+        // Reload chat rooms to sync the state
+        await loadChatRooms();
+        
+        if (response.status === 400 && errorData.error?.includes('Maximum 3 chat rooms')) {
+          toast.error('최대 3개의 채팅방만 생성할 수 있습니다. 기존 채팅방을 삭제한 후 새로운 채팅방을 만들어주세요.');
+        } else if (false) {
+          alert('최대 3개의 채팅방만 생성할 수 있습니다.\n기존 채팅방을 삭제한 후 새로운 채팅방을 만들어주세요.');
+        } else {
+          toast.error(errorData.error || '채팅방 생성에 실패했습니다. 다시 시도해주세요.');
+        }
+        
         setShowCharacterSelection(false);
       }
     } catch (error) {
@@ -150,7 +231,7 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
         {
           method: 'DELETE',
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
           },
         }
       );
@@ -181,7 +262,7 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
           },
           body: JSON.stringify({ title: editingTitle.trim() }),
         }
@@ -239,16 +320,25 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
   }
 
   if (showCharacterSelection) {
+    const canCreateRoom = chatRooms.length < 3;
+    
     return (
-      <div className="p-4 space-y-6">
+      <div className="p-4 space-y-6 pb-6">
         <div className="text-center mb-6">
           <h1 className="text-2xl font-bold text-gray-800 mb-2">캐릭터를 선택해주세요</h1>
           <p className="text-gray-600">각 캐릭터마다 다른 성격과 특성을 가지고 있어요</p>
+          {!canCreateRoom && (
+            <Alert className="mt-4 border-red-200 bg-red-50">
+              <AlertDescription className="text-red-800">
+                최대 3개의 채팅방만 생성할 수 있습니다. 기존 채팅방을 삭제한 후 새로운 채팅방을 만들어주세요.
+              </AlertDescription>
+            </Alert>
+          )}
         </div>
 
         <div className="space-y-4">
           {characters.slice(0, 3).map((character) => (
-            <Card key={character.id} className="overflow-hidden">
+            <Card key={character.id} className={`overflow-hidden ${!canCreateRoom ? 'opacity-60' : ''}`}>
               <CardContent className="p-0">
                 <div className="flex items-center p-4">
                   {/* 캐릭터 아바타 */}
@@ -305,6 +395,7 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
                     onClick={() => createNewChatRoom(character.id)}
                     className="ml-4 bg-purple-600 hover:bg-purple-700"
                     size="sm"
+                    disabled={!canCreateRoom}
                   >
                     선택하기
                   </Button>
@@ -326,7 +417,7 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
   }
 
   return (
-    <div className="p-4 space-y-6">
+    <div className="p-4 space-y-6 pb-24">
       <div className="text-center mb-6">
         <h1 className="text-2xl font-bold text-gray-800 mb-2">채팅</h1>
         <p className="text-gray-600">마음을 나누는 따뜻한 대화를 시작해보세요</p>
@@ -335,14 +426,21 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
 
 
       {/* 새 채팅 만들기 버튼 */}
-      <Button
-        onClick={() => setShowCharacterSelection(true)}
-        className="w-full bg-purple-600 hover:bg-purple-700 mb-4"
-        disabled={chatRooms.length >= 3}
-      >
-        <Plus className="w-4 h-4 mr-2" />
-        새 채팅 만들기 {chatRooms.length >= 3 && "(최대 3개)"}
-      </Button>
+      <div className="mb-4">
+        <Button
+          onClick={() => setShowCharacterSelection(true)}
+          className="w-full bg-purple-600 hover:bg-purple-700"
+          disabled={chatRooms.length >= 3}
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          새 채팅 만들기 ({chatRooms.length}/3)
+        </Button>
+        {chatRooms.length >= 3 && (
+          <p className="text-xs text-red-600 mt-2 text-center">
+            최대 3개까지만 생성 가능합니다. 기존 채팅방을 삭제해주세요.
+          </p>
+        )}
+      </div>
 
       {/* 채팅방 리스트 */}
       <div className="space-y-3">
@@ -359,7 +457,8 @@ export function CharacterSelectionPage({ accessToken, onCharacterSelect }: Chara
                   // 곰 캐릭터는 구글 캘린더 연동 페이지로
                   onCharacterSelect('bear', 'calendar-integration');
                 } else {
-                  onCharacterSelect(room.characterId, room.id);
+                  // 채팅방에 입장할 때는 초기 캐릭터로 시작하지만 나중에 변경 가능
+                  onCharacterSelect(room.characterId || 'rabbit', room.id);
                 }
               }}
             >

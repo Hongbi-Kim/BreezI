@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Alert, AlertDescription } from './ui/alert';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner';
 
 interface Message {
   id: string;
@@ -26,6 +27,7 @@ interface ChatPageProps {
   characterId?: string;
   chatRoomId?: string;
   onBackToSelection?: () => void;
+  onTokenRefresh?: () => Promise<string | null>;
 }
 
 interface Character {
@@ -82,7 +84,7 @@ const characters: Record<string, Character> = {
   },
 };
 
-export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelection }: ChatPageProps) {
+export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelection, onTokenRefresh }: ChatPageProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -90,7 +92,12 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
   const [currentCharacterId, setCurrentCharacterId] = useState(characterId);
   const [warningAnimation, setWarningAnimation] = useState(false);
   const [chatRoomTitle, setChatRoomTitle] = useState<string>('');
+  const [currentToken, setCurrentToken] = useState(accessToken);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setCurrentToken(accessToken);
+  }, [accessToken]);
 
   useEffect(() => {
     loadChatHistory();
@@ -105,7 +112,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const loadChatHistory = async () => {
+  const loadChatHistory = async (retryWithRefresh = true) => {
     if (!chatRoomId || chatRoomId === 'calendar-integration') {
       setLoadingHistory(false);
       return;
@@ -116,32 +123,74 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
         chatRoomId: chatRoomId
       });
 
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/chat/history?${params}`,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
           },
+          signal: controller.signal,
         }
       );
+      
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('Loaded chat history:', data);
+        console.log('Chat room ID:', chatRoomId);
+        console.log('Character ID:', characterId);
+        
         // Add unique IDs to messages that don't have them
-        const messagesWithIds = (data.messages || []).map((msg: any, index: number) => ({
-          ...msg,
-          id: msg.id || `${msg.type}-${msg.timestamp}-${index}`
-        }));
+        const messagesWithIds = (data.messages || []).map((msg: any, index: number) => {
+          console.log('Processing message:', msg);
+          // Create a more unique ID to prevent collisions
+          const uniqueId = msg.id || `${msg.type}-${Date.parse(msg.timestamp) || Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`;
+          return {
+            ...msg,
+            id: uniqueId
+          };
+        });
+        
+        console.log('Final messages:', messagesWithIds);
         setMessages(messagesWithIds);
+      } else {
+        console.error('Failed to load chat history:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        
+        if (response.status === 401 && retryWithRefresh && onTokenRefresh) {
+          console.log('Token expired, attempting refresh...');
+          const newToken = await onTokenRefresh();
+          if (newToken) {
+            setCurrentToken(newToken);
+            // Retry with new token
+            return loadChatHistory(false);
+          } else {
+            toast.error('로그인이 만료되었습니다. 다시 로그인해주세요.');
+          }
+        } else if (response.status >= 500) {
+          toast.error('서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        }
       }
-    } catch (error) {
-      console.error('Failed to load chat history:', error);
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.error('Chat history request timed out');
+        toast.error('채팅 내역을 불러오는 시간이 초과되었습니다.');
+        setMessages([]);
+      } else {
+        console.error('Failed to load chat history:', error);
+        toast.error('채팅 내역을 불러올 수 없습니다. 네트워크를 확인해주세요.');
+      }
     } finally {
       setLoadingHistory(false);
     }
   };
 
-  const loadChatRoomInfo = async () => {
+  const loadChatRoomInfo = async (retryWithRefresh = true) => {
     if (!chatRoomId || chatRoomId === 'calendar-integration') {
       return;
     }
@@ -151,7 +200,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
         `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/chat/rooms`,
         {
           headers: {
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
           },
         }
       );
@@ -162,18 +211,34 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
         if (room) {
           setChatRoomTitle(room.title || '');
         }
+      } else if (response.status === 401 && retryWithRefresh && onTokenRefresh) {
+        console.log('Token expired while loading room info, attempting refresh...');
+        const newToken = await onTokenRefresh();
+        if (newToken) {
+          setCurrentToken(newToken);
+          // Retry with new token
+          return loadChatRoomInfo(false);
+        }
       }
     } catch (error) {
       console.error('Failed to load chat room info:', error);
     }
   };
 
-  const sendMessage = async () => {
+  const sendMessage = async (retryWithRefresh = true) => {
     if (!newMessage.trim()) return;
+    
+    // Check if we have a valid chat room
+    if (!chatRoomId || chatRoomId === 'calendar-integration') {
+      console.error('Cannot send message: no valid chat room ID');
+      return;
+    }
 
     setLoading(true);
     const userMessage = newMessage;
     setNewMessage('');
+    
+    console.log('Sending message to room:', chatRoomId, 'with character:', currentCharacterId || characterId);
 
     try {
       const response = await fetch(
@@ -182,7 +247,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${accessToken}`,
+            'Authorization': `Bearer ${currentToken}`,
           },
           body: JSON.stringify({
             message: userMessage,
@@ -204,8 +269,9 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
         
         // Add user message
         const userTimestamp = Date.now();
+        const randomSuffix = Math.random().toString(36).substr(2, 9);
         const userMsg: Message = {
-          id: `user-${userTimestamp}`,
+          id: `user-${userTimestamp}-${randomSuffix}`,
           message: userMessage,
           type: 'user',
           timestamp: new Date().toISOString(),
@@ -214,7 +280,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
 
         // Add AI response with current character info
         const aiMsg: Message = {
-          id: `ai-${userTimestamp + 1}`,
+          id: `ai-${userTimestamp}-${randomSuffix}`,
           message: data.aiResponse,
           type: 'ai',
           timestamp: new Date().toISOString(),
@@ -225,11 +291,26 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
         };
 
         setMessages(prev => [...prev, userMsg, aiMsg]);
+      } else if (response.status === 401 && retryWithRefresh && onTokenRefresh) {
+        console.log('Token expired while sending message, attempting refresh...');
+        const newToken = await onTokenRefresh();
+        if (newToken) {
+          setCurrentToken(newToken);
+          setNewMessage(userMessage); // Restore the message
+          setLoading(false);
+          // Retry with new token
+          return sendMessage(false);
+        } else {
+          console.error('Failed to send message - unable to refresh token');
+          setNewMessage(userMessage); // Restore the message so user can retry
+        }
       } else {
         console.error('Failed to send message');
+        setNewMessage(userMessage); // Restore the message so user can retry
       }
     } catch (error) {
       console.error('Error sending message:', error);
+      setNewMessage(userMessage); // Restore the message so user can retry
     } finally {
       setLoading(false);
     }
@@ -292,7 +373,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
                   <li>• 구글 캘린더 일정 자동 분석</li>
                   <li>• 일정 패턴 기반 스트레스 지수 측정</li>
                   <li>• 맞춤형 휴식 시간 추천</li>
-                  <li>• 건강한 일정 관리 조언</li>
+                  <li>��� 건강한 일정 관리 조언</li>
                   <li>• 워라밸 개선 가이드</li>
                 </ul>
               </div>
@@ -334,25 +415,15 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
   }
 
   return (
-    <div className={`flex flex-col h-[calc(100vh-8rem)] ${warningAnimation ? 'animate-pulse bg-red-100' : ''}`}>
+    <div className={`flex flex-col h-[calc(100dvh-120px)] ${warningAnimation ? 'animate-pulse bg-red-100' : ''}`}>
       {/* Chat header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-purple-100 p-4">
-        <div className="flex items-center gap-3">
+      <div className="bg-white/80 backdrop-blur-sm border-b border-purple-100 p-3">
+        <div className="flex items-center gap-2">
           {onBackToSelection && (
-            <Button variant="ghost" size="sm" onClick={onBackToSelection}>
+            <Button variant="ghost" size="sm" onClick={onBackToSelection} className="h-8 px-2">
               <ArrowLeft className="w-4 h-4" />
             </Button>
           )}
-          <Avatar className="h-10 w-10">
-            <img 
-              src={currentCharacter.avatar}
-              alt={currentCharacter.name}
-              className="w-full h-full object-cover rounded-full"
-            />
-            <AvatarFallback className="bg-purple-100 text-purple-600">
-              {currentCharacter.emoji}
-            </AvatarFallback>
-          </Avatar>
           <div className="flex-1">
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-gray-800">
@@ -387,7 +458,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
                 </DialogContent>
               </Dialog>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-xs text-gray-600">
               {chatRoomTitle ? `${currentCharacter.name} - ${currentCharacter.description}` : currentCharacter.description}
             </p>
           </div>
@@ -397,7 +468,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
             setCurrentCharacterId(value);
             // 캐릭터 변경 시 메시지에 알림 추가
             const changeMessage: Message = {
-              id: `system-${Date.now()}`,
+              id: `system-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
               message: `${characters[value]?.name}(${characters[value]?.emoji})로 캐릭터가 변경되었습니다.`,
               type: 'ai',
               timestamp: new Date().toISOString(),
@@ -407,14 +478,24 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
             };
             setMessages(prev => [...prev, changeMessage]);
           }}>
-            <SelectTrigger className="w-16 h-8">
-              <SelectValue />
+            <SelectTrigger className="w-auto h-8 px-2">
+              <div className="flex items-center gap-1">
+                <img 
+                  src={currentCharacter.avatar}
+                  alt={currentCharacter.name}
+                  className="w-6 h-6 rounded-full object-cover"
+                />
+              </div>
             </SelectTrigger>
             <SelectContent>
               {Object.values(characters).slice(0, 3).map((char) => (
                 <SelectItem key={char.id} value={char.id}>
                   <span className="flex items-center gap-2">
-                    <span>{char.emoji}</span>
+                    <img 
+                      src={char.avatar}
+                      alt={char.name}
+                      className="w-5 h-5 rounded-full object-cover"
+                    />
                     <span>{char.name}</span>
                   </span>
                 </SelectItem>
@@ -428,16 +509,21 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
           <div className="text-center py-8">
-            <div className="text-6xl mb-4">{currentCharacter.emoji}</div>
+            <img 
+              src={currentCharacter.avatar}
+              alt={currentCharacter.name}
+              className="w-20 h-20 rounded-full object-cover mx-auto mb-4"
+            />
             <p className="text-gray-600 mb-2">안녕하세요! 저는 {currentCharacter.name}예요.</p>
             <p className="text-gray-500 text-sm">{currentCharacter.greeting}</p>
           </div>
         ) : (
           (() => {
             const messagesWithDates: (Message | { type: 'date'; date: string; id: string })[] = [];
-            let lastDate = '';
+            let lastDateString = '';
+            let dateIndex = 0;
 
-            messages.forEach((message) => {
+            messages.forEach((message, messageIndex) => {
               const messageDate = new Date(message.timestamp);
               const dateString = messageDate.toLocaleDateString('ko-KR', {
                 year: 'numeric',
@@ -446,19 +532,20 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
                 weekday: 'long'
               });
 
-              if (dateString !== lastDate) {
+              if (dateString !== lastDateString) {
                 messagesWithDates.push({
                   type: 'date',
                   date: dateString,
-                  id: `date-${messageDate.toISOString().split('T')[0]}`
+                  id: `date-separator-${dateIndex}-${messageDate.toISOString().split('T')[0]}`
                 });
-                lastDate = dateString;
+                lastDateString = dateString;
+                dateIndex++;
               }
 
               messagesWithDates.push(message);
             });
 
-            return messagesWithDates.map((item) => {
+            return messagesWithDates.map((item, globalIndex) => {
               if (item.type === 'date') {
                 return (
                   <div key={item.id} className="flex justify-center my-6">
@@ -471,6 +558,10 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
 
               const message = item as Message;
               
+              // Get character info for this message (fallback to current character)
+              const messageCharacterId = message.characterId || currentCharacterId || characterId;
+              const messageCharacter = characters[messageCharacterId] || currentCharacter;
+              
               // Warning message styling
               const isWarning = message.warning;
               const userBubbleClass = isWarning 
@@ -481,17 +572,17 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
                 : 'bg-white border border-gray-200 text-gray-800';
               
               return (
-                <div key={message.id} className="space-y-1">
+                <div key={message.id || `message-${globalIndex}-${Date.now()}`} className="space-y-1">
                   <div className={`flex items-end gap-2 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
                     {message.type === 'ai' && (
                       <Avatar className="h-8 w-8 mb-1">
                         <img 
-                          src={message.characterId && characters[message.characterId] ? characters[message.characterId].avatar : currentCharacter.avatar}
-                          alt={message.characterName || currentCharacter.name}
+                          src={messageCharacter.avatar}
+                          alt={message.characterName || messageCharacter.name}
                           className="w-full h-full object-cover rounded-full"
                         />
                         <AvatarFallback className="bg-purple-100 text-purple-600">
-                          {message.characterEmoji || currentCharacter.emoji}
+                          {message.characterEmoji || messageCharacter.emoji}
                         </AvatarFallback>
                       </Avatar>
                     )}
@@ -527,7 +618,7 @@ export function ChatPage({ accessToken, characterId, chatRoomId, onBackToSelecti
       </div>
 
       {/* Message input */}
-      <div className="p-4 bg-white/80 backdrop-blur-sm border-t border-purple-100">
+      <div className="p-3 bg-white/80 backdrop-blur-sm border-t border-purple-100">
         <div className="flex gap-2">
           <Input
             value={newMessage}
