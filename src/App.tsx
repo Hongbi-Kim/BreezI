@@ -1,797 +1,425 @@
-import React, { useState, useEffect } from 'react';
-import { LoginPage } from './components/LoginPage';
-import { ProfileSetupPage } from './components/ProfileSetupPage';
-import { ProfilePage } from './components/ProfilePage';
-import { PrivacyPolicyPage } from './components/PrivacyPolicyPage';
-import { TermsOfServicePage } from './components/TermsOfServicePage';
-import { CharacterSelectionPage } from './components/CharacterSelectionPage';
-import { ChatPage } from './components/ChatPage';
-import { DiaryPage } from './components/DiaryPage';
-import { ReportPage } from './components/ReportPage';
-import { CommunityPage } from './components/CommunityPage';
-import { CommunityPostDetailPage } from './components/CommunityPostDetailPage';
-import { UserProfilePage } from './components/UserProfilePage';
-import { CalendarPage } from './components/CalendarPage';
-import { AdminPage } from './components/AdminPage';
-import { Navigation } from './components/Navigation';
-import { Footer } from './components/Footer';
-import { NotificationBell } from './components/NotificationBell';
-import { SuspendedAccountDialog } from './components/SuspendedAccountDialog';
+import { useState, useEffect, useRef } from 'react';
+import { AuthScreen } from './components/AuthScreen';
+import { ProfileSetup } from './components/ProfileSetup';
+import { HomeTab } from './components/HomeTab';
+import { WaveTab } from './components/WaveTab';
+import { ChatTab } from './components/ChatTab';
+import { DiaryTab } from './components/DiaryTab';
+import { ReportTab } from './components/ReportTab';
+import { ProfileTab } from './components/ProfileTab';
+import { AdminTab } from './components/AdminTab';
+import { FeedbackDialog } from './components/FeedbackDialog';
+import { NotificationDialog } from './components/NotificationDialog';
+import { WaveLogoFull } from './components/WaveLogoFull';
+import { OnboardingTour } from './components/OnboardingTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { OnboardingTutorial } from './components/OnboardingTutorial';
-import { FeedbackButton } from './components/BetaFeedbackButton';
-import { SplashScreen } from './components/SplashScreen';
 import { Toaster } from './components/ui/sonner';
-import { User, Calendar, WifiOff } from 'lucide-react';
+import { MessageSquare, BookOpen, BarChart3, User, Shield, Bell, Waves } from 'lucide-react';
 import { Button } from './components/ui/button';
-import { supabase } from './utils/supabase/client';
-import { projectId, publicAnonKey } from './utils/supabase/info';
+import { createClient } from './utils/supabase/client';
+import { apiCall } from './utils/api';
+import { DataCacheProvider } from './utils/dataCache';
+import { logUserAction } from './utils/logUserAction';
 import { toast } from 'sonner';
-import { addNetworkListener } from './utils/network';
-
-export type Page = 'chat' | 'diary' | 'report' | 'community' | 'calendar' | 'admin';
-
-const ADMIN_EMAIL = 'khb1620@naver.com';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [hasProfile, setHasProfile] = useState(false);
-  const [showProfileSetup, setShowProfileSetup] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
-  const [showCalendar, setShowCalendar] = useState(false);
-  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
-  const [showTermsOfService, setShowTermsOfService] = useState(false);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState<Page>('chat');
-  const [selectedCharacter, setSelectedCharacter] = useState<string>('');
-  const [selectedChatRoomId, setSelectedChatRoomId] = useState<string>('');
-  const [selectedPostId, setSelectedPostId] = useState<string>('');
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [calendarKey, setCalendarKey] = useState(0);
+  const [needsProfileSetup, setNeedsProfileSetup] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [userEmail, setUserEmail] = useState<string>('');
-  const [currentUserId, setCurrentUserId] = useState<string>('');
-  const [suspendedInfo, setSuspendedInfo] = useState<{
-    status: 'suspended' | 'banned';
-    reason: string;
-    userId: string;
-    email: string;
-    accessToken: string;
-  } | null>(null);
-  const [showSuspendedDialog, setShowSuspendedDialog] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  const [showTutorial, setShowTutorial] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
-
-  // Network status listener
-  useEffect(() => {
-    const cleanup = addNetworkListener((online) => {
-      setIsOnline(online);
-      if (online) {
-        toast.success('인터넷 연결이 복구되었습니다');
-      } else {
-        toast.error('인터넷 연결이 끊어졌습니다', {
-          icon: <WifiOff className="w-4 h-4" />,
-          duration: Infinity,
-        });
-      }
-    });
-    return cleanup;
-  }, []);
+  const [hasEnteredApp, setHasEnteredApp] = useState(false);
+  const [activeTab, setActiveTab] = useState('chat');
+  const [reportKey, setReportKey] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [hasPlayedSound, setHasPlayedSound] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     checkAuth();
-    
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event);
-        
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          if (session?.access_token) {
-            console.log('Updating token from auth state change:', event);
-            setAccessToken(session.access_token);
-            setIsAuthenticated(true);
-            
-            // Update admin status if user info is available
-            const { data: { user } } = await supabase.auth.getUser(session.access_token);
-            if (user?.email) {
-              setUserEmail(user.email);
-              setIsAdmin(user.email === ADMIN_EMAIL);
-              setCurrentUserId(user.id);
-            }
-          }
-        } else if (event === 'SIGNED_OUT') {
-          console.log('User signed out, clearing state');
-          setAccessToken(null);
-          setIsAuthenticated(false);
-          setHasProfile(false);
-          setShowProfileSetup(false);
-          setShowProfile(false);
-          setSelectedCharacter('');
-          setCurrentPage('chat');
-          setIsAdmin(false);
-          setUserEmail('');
-          setCurrentUserId('');
-        if (!session) {
-          console.log('Session expired or invalid, attempting token refresh...');
-          await refreshToken();
-        }
-      }
-    }
-    );
 
+    // Supabase 세션 상태 변경 리스너 설정
+    const supabase = createClient();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[App] Auth state changed:', event);
+
+      if (event === 'SIGNED_IN' && session) {
+        setIsAuthenticated(true);
+        // Profile setup check will be done by checkAuth or subsequent calls
+      } else if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+        setNeedsProfileSetup(false);
+        setIsAdmin(false);
+        setHasEnteredApp(false);
+      } else if (event === 'TOKEN_REFRESHED' && session) {
+        console.log('[App] Token refreshed successfully');
+        // Session is automatically updated, no action needed
+      } else if (event === 'USER_UPDATED' && session) {
+        console.log('[App] User updated');
+      }
+    });
+
+    // Cleanup listener on unmount
     return () => {
-      subscription?.unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && accessToken) {
-      checkProfile();
+    if (isAuthenticated && !needsProfileSetup && hasEnteredApp) {
+      loadUnreadCount();
+      loadNotifications();
+      // Refresh unread count and notifications every 30 seconds
+      const interval = setInterval(() => {
+        loadUnreadCount();
+        loadNotifications();
+      }, 30000);
+      return () => clearInterval(interval);
     }
-  }, [isAuthenticated, accessToken]);
+  }, [isAuthenticated, needsProfileSetup, hasEnteredApp]);
+
+  // Initialize audio for notification sound
+  useEffect(() => {
+    // Create a simple notification sound using Web Audio API
+    audioRef.current = new Audio();
+    audioRef.current.src = 'data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUKzn77FgGwU7k9n0y3krBSh+zPLaizsKGGS56+ibUBELTKXh8LhjHAU2jdXzzn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBSh7yfDdkT0KGWW76+mYThEKTKPh8LdjHAU3jtb0zn0vBQ==';
+  }, []);
+
+  const loadUnreadCount = async () => {
+    try {
+      const data = await apiCall('/chat/unread-count');
+      setUnreadCount(data.unreadCount || 0);
+    } catch (error: any) {
+      // Silently handle network errors and session issues
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
+        console.log('Skipping unread count load:', error.message);
+        return;
+      }
+      console.error('Failed to load unread count:', error);
+      // If unauthorized, clear auth state
+      if (error.message?.includes('401')) {
+        handleAuthError();
+      }
+    }
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const data = await apiCall('/notifications');
+      const newNotifications = data.notifications || [];
+      
+      // If there are new notifications and we haven't played sound yet
+      if (newNotifications.length > 0 && notifications.length === 0 && !hasPlayedSound) {
+        playNotificationSound();
+        setHasPlayedSound(true);
+      } else if (newNotifications.length > notifications.length && notifications.length > 0) {
+        // New notification arrived
+        playNotificationSound();
+      }
+      
+      setNotifications(newNotifications);
+    } catch (error: any) {
+      // Silently handle network errors and session issues
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
+        console.log('Skipping notifications load:', error.message);
+        return;
+      }
+      console.error('Failed to load notifications:', error);
+      // If unauthorized, clear auth state
+      if (error.message?.includes('401')) {
+        handleAuthError();
+      }
+    }
+  };
+
+  const handleAuthError = async () => {
+    console.log('Authentication error detected, clearing session...');
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setIsAuthenticated(false);
+    setNeedsProfileSetup(false);
+    setIsAdmin(false);
+  };
+
+  const playNotificationSound = () => {
+    if (audioRef.current) {
+      audioRef.current.play().catch(err => {
+        console.log('Could not play notification sound:', err);
+      });
+    }
+  };
+
+  const handleNotificationsRead = () => {
+    setNotifications([]);
+    setHasPlayedSound(false);
+  };
 
   const checkAuth = async () => {
     try {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.error('Session error:', error.message);
-        setIsAuthenticated(false);
-        setAccessToken(null);
-        setIsAdmin(false);
-        setLoading(false);
-        return;
-      }
-      
+      // Check if user has existing session
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
       if (session?.access_token) {
-        console.log('Valid session found, setting token');
-        setAccessToken(session.access_token);
-        setIsAuthenticated(true);
+        console.log('[App] Active session found');
         
-        // Check if admin - use the token from the session
-        const { data: { user }, error: userError } = await supabase.auth.getUser(session.access_token);
-        if (userError) {
-          console.error('Get user error:', userError.message);
-          // If we can't get the user, the token might be invalid
-          if (userError.message.includes('JWT') || userError.message.includes('invalid') || userError.message.includes('expired')) {
-            console.log('Token appears invalid, clearing session');
-            await supabase.auth.signOut();
-            setIsAuthenticated(false);
-            setAccessToken(null);
-            setIsAdmin(false);
+        // Verify profile exists
+        try {
+          const profileData = await apiCall('/profile');
+          if (!profileData.profile || !profileData.profile.nickname) {
+            setNeedsProfileSetup(true);
+          } else {
+            // Check if admin
+            if (profileData.email === 'khb1620@naver.com') {
+              setIsAdmin(true);
+            }
           }
-        } else if (user?.email) {
-          setUserEmail(user.email);
-          setIsAdmin(user.email === ADMIN_EMAIL);
-          setCurrentUserId(user.id);
+        } catch (error: any) {
+          // Silently handle network errors and session issues during initial load
+          if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
+            console.log('Skipping profile check:', error.message);
+            // Continue with authenticated state
+          } else if (error.message?.includes('401')) {
+            // If unauthorized, session is invalid
+            console.log('[App] Session invalid, signing out...');
+            await handleAuthError();
+            setIsLoading(false);
+            return;
+          } else {
+            console.error('Profile check error:', error);
+          }
         }
-      } else {
-        console.log('No valid session found');
-        setIsAuthenticated(false);
-        setAccessToken(null);
-        setIsAdmin(false);
+
+        setIsAuthenticated(true);
       }
     } catch (error: any) {
-      console.error('Auth check error:', error?.message || error);
-      setIsAuthenticated(false);
-      setAccessToken(null);
-      setIsAdmin(false);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const refreshToken = async () => {
-    try {
-      console.log('Attempting to refresh token...');
-      
-      // First check if we have an active session
-      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.log('Session error during refresh:', sessionError.message);
-        handleLogout();
-        return null;
-      }
-      
-      if (!currentSession) {
-        console.log('No active session found - redirecting to login');
-        handleLogout();
-        return null;
-      }
-      
-      console.log('Current session exists, attempting refresh...');
-      
-      // Try to refresh the session
-      const { data: { session }, error } = await supabase.auth.refreshSession();
-      
-      if (error) {
-        console.log('Token refresh error:', error.message);
-        // If it's a session missing error, logout gracefully
-        if (error.message.includes('session') || error.message.includes('refresh_token') || error.message.includes('Auth session missing')) {
-          console.log('Session expired or invalid, logging out');
-          handleLogout();
-        }
-        return null;
-      }
-      
-      if (session?.access_token) {
-        console.log('Token refreshed successfully');
-        setAccessToken(session.access_token);
-        return session.access_token;
-      }
-      
-      console.log('No access token in refreshed session');
-      handleLogout();
-      return null;
-    } catch (error: any) {
-      console.log('Token refresh failed:', error?.message || error);
-      // Only logout on specific auth errors, not network errors
-      if (error?.message?.includes('session') || error?.message?.includes('Auth') || error?.message?.includes('refresh')) {
-        handleLogout();
-      }
-      return null;
-    }
-  };
-
-  const makeAuthenticatedRequest = async (url: string, options: RequestInit = {}) => {
-    let token = accessToken;
-    
-    if (!token) {
-      console.log('No access token available for request');
-      return new Response(JSON.stringify({ error: 'No access token' }), { status: 401 });
-    }
-    
-    // First try with current token
-    let response = await fetch(url, {
-      ...options,
-      headers: {
-        ...options.headers,
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-    
-    // If 401, try to refresh token and retry once
-    if (response.status === 401) {
-      console.log('Request returned 401, attempting token refresh...');
-      const newToken = await refreshToken();
-      
-      if (newToken) {
-        console.log('Retrying request with refreshed token...');
-        response = await fetch(url, {
-          ...options,
-          headers: {
-            ...options.headers,
-            'Authorization': `Bearer ${newToken}`,
-          },
-        });
+      // Silently handle initial auth check errors
+      if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
+        console.log('Skipping auth check:', error.message);
       } else {
-        console.log('Token refresh unsuccessful, user will be logged out');
-      }
-    }
-    
-    return response;
-  };
-
-  const checkProfile = async () => {
-    if (!accessToken) {
-      console.log('No access token, skipping profile check');
-      return;
-    }
-
-    setProfileLoading(true);
-    try {
-      const response = await makeAuthenticatedRequest(
-        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/profile/check`
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Check if user is suspended or banned
-        if (data.profile && (data.profile.status === 'suspended' || data.profile.status === 'banned')) {
-          const reason = data.profile.status === 'suspended' 
-            ? (data.profile.suspendReason || '관리자 조치')
-            : (data.profile.banReason || '관리자 조치');
-          
-          // Get current user info
-          const { data: { user } } = await supabase.auth.getUser(accessToken);
-          
-          setSuspendedInfo({
-            status: data.profile.status,
-            reason: reason,
-            userId: user?.id || '',
-            email: user?.email || '',
-            accessToken: accessToken,
-          });
-          setShowSuspendedDialog(true);
-          return;
-        }
-        
-        setHasProfile(data.hasProfile);
-        // Admin users can skip profile setup
-        if (!data.hasProfile && !isAdmin) {
-          setShowProfileSetup(true);
-        } else if (!data.hasProfile && isAdmin) {
-          // Admin has profile from restore, just mark as complete
-          setHasProfile(true);
-        }
-      } else if (response.status === 401) {
-        console.log('Authentication failed during profile check - session expired');
-        // Token refresh already attempted in makeAuthenticatedRequest
-        // Just logout if still getting 401
-        handleLogout();
-      } else {
-        console.error('Profile check failed:', response.status, response.statusText);
-        // Don't logout on non-auth errors
-      }
-    } catch (error: any) {
-      console.error('Profile check error:', error?.message || error);
-      // Don't logout on network errors, only on auth errors
-      if (error?.message?.includes('token') || error?.message?.includes('auth')) {
-        handleLogout();
+        console.error('Auth check error:', error);
       }
     } finally {
-      setProfileLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const handleLogin = async (token: string) => {
-    console.log('handleLogin called with token');
+  const handleAuth = async (accessToken: string) => {
+    setIsAuthenticated(true);
     
-    // First, verify the token is valid
-    try {
-      const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-      
-      if (userError) {
-        console.error('Token validation error:', userError.message);
-        toast.error('로그인 토큰이 유효하지 않습니다. 다시 로그인해주세요.');
-        await supabase.auth.signOut();
-        return;
-      }
-      
-      if (!user) {
-        console.error('No user data for token');
-        toast.error('사용자 정보를 가져올 수 없습니다.');
-        await supabase.auth.signOut();
-        return;
-      }
-      
-      console.log('Token is valid for user:', user.email);
-      
-      // Verify the session is actually stored
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Session retrieval error:', sessionError.message);
-        toast.error('세션을 가져오는 중 오류가 발생했습니다. 다시 시도해주세요.');
-        return;
-      }
-      
-      if (!session) {
-        console.error('No session found in storage after login');
-        // This shouldn't happen since we just logged in, but handle it gracefully
-        toast.error('로그인 세션이 저장되지 않았습니다. 브라우저의 쿠키 설정을 확인해주세요.');
-        return;
-      }
-      
-      console.log('Session confirmed in storage');
-      
-      // Use the session token (should match the passed token)
-      setAccessToken(session.access_token);
-      setIsAuthenticated(true);
-      setUserEmail(user.email || '');
-      setIsAdmin(user.email === ADMIN_EMAIL);
-      setCurrentUserId(user.id);
-      
-      console.log('User authenticated successfully:', user.email);
-    } catch (error: any) {
-      console.error('Unexpected error during login:', error);
-      toast.error('로그인 처리 중 오류가 발생했습니다.');
-      await supabase.auth.signOut();
-      setIsAuthenticated(false);
-      setAccessToken(null);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      setAccessToken(null);
-      setIsAuthenticated(false);
-      setHasProfile(false);
-      setShowProfileSetup(false);
-      setShowProfile(false);
-      setSelectedCharacter('');
-      setCurrentPage('chat');
-      setIsAdmin(false);
-      setUserEmail('');
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
-  const handleProfileSetupComplete = () => {
-    setHasProfile(true);
-    setShowProfileSetup(false);
-  };
-
-  const handleCharacterSelect = (characterId: string, chatRoomId?: string) => {
-    setSelectedCharacter(characterId);
-    setSelectedChatRoomId(chatRoomId || '');
-  };
-
-  const handleBackToCharacterSelection = () => {
-    setSelectedCharacter('');
-    setSelectedChatRoomId('');
-  };
-
-  const handlePostClick = (postId: string) => {
-    setSelectedPostId(postId);
-    setSelectedUserId(''); // Reset selectedUserId when viewing a post
-  };
-
-  const handleBackToCommunity = () => {
-    setSelectedPostId('');
-    setSelectedUserId('');
-  };
-
-  const handleLogoClick = () => {
-    setCurrentPage('chat');
-    setSelectedCharacter('');
-    setSelectedChatRoomId('');
-    setSelectedPostId('');
-    setSelectedUserId('');
-  };
-
-  const handleSubmitUnbanRequest = async (reason: string) => {
-    if (!suspendedInfo) return;
-
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-58f75568/user/unban-request`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${suspendedInfo.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userId: suspendedInfo.userId,
-            email: suspendedInfo.email,
-            reason: reason,
-          }),
+    // Check if profile setup is needed
+    const needsSetup = localStorage.getItem('needs_profile_setup') === 'true';
+    setNeedsProfileSetup(needsSetup);
+    
+    if (!needsSetup) {
+      // Check if admin
+      try {
+        const profileData = await apiCall('/profile');
+        if (profileData.email === 'khb1620@naver.com') {
+          setIsAdmin(true);
         }
-      );
-
-      if (!response.ok) {
-        const error = await response.text();
-        throw new Error(error || 'Failed to submit unban request');
+      } catch (error) {
+        console.error('Profile check error:', error);
       }
-
-      console.log('Unban request submitted successfully');
-    } catch (error) {
-      console.error('Error submitting unban request:', error);
-      throw error;
     }
   };
 
-  const handleSuspendedDialogClose = async () => {
-    setShowSuspendedDialog(false);
-    // Clear suspended info after dialog animation
-    setTimeout(() => {
-      setSuspendedInfo(null);
-    }, 300);
-    // Logout is handled by the dialog itself after successful submission
+  const handleProfileSetupComplete = async () => {
+    setNeedsProfileSetup(false);
+    
+    // Check if admin
+    try {
+      const profileData = await apiCall('/profile');
+      if (profileData.email === 'khb1620@naver.com') {
+        setIsAdmin(true);
+      }
+    } catch (error) {
+      console.error('Profile check error:', error);
+    }
+
+    // Show onboarding for new users
+    const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
+    if (!hasSeenOnboarding) {
+      setShowOnboarding(true);
+    }
   };
 
-  // 스플래시 스크린 표시
-  if (showSplash) {
-    return <SplashScreen onComplete={() => setShowSplash(false)} />;
-  }
+  const handleSignOut = () => {
+    setIsAuthenticated(false);
+    setNeedsProfileSetup(false);
+    setIsAdmin(false);
+    setHasEnteredApp(false);
+    setActiveTab('chat');
+  };
 
-  if (loading || profileLoading) {
+  const handleEnterApp = () => {
+    setHasEnteredApp(true);
+    setActiveTab('wave');
+    
+    // Show onboarding for new users after entering app
+    const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
+    if (!hasSeenOnboarding && !needsProfileSetup) {
+      setTimeout(() => setShowOnboarding(true), 500);
+    }
+  };
+
+  const handleOnboardingComplete = () => {
+    localStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
+    toast.success('환영합니다! Wave I와 함께 여정을 시작해보세요 🌊');
+  };
+
+  const handleOnboardingSkip = () => {
+    localStorage.setItem('hasSeenOnboarding', 'true');
+    setShowOnboarding(false);
+  };
+
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-sky-50 to-blue-50 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">로딩 중...</p>
+          <WaveLogoFull size="large" animated />
+          <p className="text-gray-600 mt-4">Ride your inner wave</p>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated || !accessToken) {
-    return (
-      <>
-        {!showPrivacyPolicy && !showTermsOfService && (
-          <LoginPage 
-            onLogin={handleLogin}
-            onShowPrivacyPolicy={() => setShowPrivacyPolicy(true)}
-            onShowTerms={() => setShowTermsOfService(true)}
-          />
-        )}
-        
-        {showPrivacyPolicy && (
-          <PrivacyPolicyPage
-            onBack={() => setShowPrivacyPolicy(false)}
-          />
-        )}
-        
-        {showTermsOfService && (
-          <TermsOfServicePage
-            onBack={() => setShowTermsOfService(false)}
-          />
-        )}
-      </>
-    );
+  if (!isAuthenticated) {
+    return <AuthScreen onAuth={handleAuth} />;
   }
 
-  // Show profile setup if user hasn't completed it
-  if (showProfileSetup && !hasProfile) {
-    return (
-      <ProfileSetupPage
-        accessToken={accessToken}
-        onComplete={handleProfileSetupComplete}
-      />
-    );
+  if (needsProfileSetup) {
+    return <ProfileSetup onComplete={handleProfileSetupComplete} />;
   }
 
-  // Show profile page if requested
-  if (showProfile) {
-    return (
-      <>
-        <ProfilePage
-          accessToken={accessToken}
-          onClose={() => setShowProfile(false)}
-          onShowPrivacyPolicy={() => {
-            setShowProfile(false);
-            setShowPrivacyPolicy(true);
-          }}
-          onShowTutorial={() => {
-            setShowTutorial(true);
-          }}
-        />
-        {/* 튜토리얼 다이얼로그 */}
-        <OnboardingTutorial 
-          open={showTutorial} 
-          onOpenChange={setShowTutorial} 
-        />
-      </>
-    );
+  // Show landing page if user hasn't entered app yet
+  if (!hasEnteredApp) {
+    return <HomeTab onEnterApp={handleEnterApp} />;
   }
 
-  // Show privacy policy or terms page if requested
-  if (showPrivacyPolicy) {
-    return (
-      <PrivacyPolicyPage
-        onBack={() => {
-          setShowPrivacyPolicy(false);
-          setShowProfile(true);
-        }}
-      />
-    );
-  }
-  
-  if (showTermsOfService) {
-    return (
-      <TermsOfServicePage
-        onBack={() => {
-          setShowTermsOfService(false);
-          setShowProfile(true);
-        }}
-      />
-    );
-  }
+  const tabs = [
+    { id: 'wave', label: 'Wave', icon: Waves },
+    { id: 'chat', label: '채팅', icon: MessageSquare },
+    { id: 'diary', label: '일기', icon: BookOpen },
+    { id: 'report', label: '리포트', icon: BarChart3 },
+    { id: 'profile', label: '프로필', icon: User },
+    ...(isAdmin ? [{ id: 'admin', label: '관리자', icon: Shield }] : []),
+  ];
 
-  // Show calendar page if requested
-  if (showCalendar) {
-    return (
-      <div className="min-h-screen bg-white" style={{ minHeight: '100dvh' }}>
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-10 safe-top shadow-sm">
-          <div className="px-2 sm:px-4 py-2 flex items-center justify-between max-w-6xl mx-auto">
+  return (
+    <ErrorBoundary>
+      <DataCacheProvider>
+      <div className="h-screen flex flex-col bg-gray-50">
+        {/* Header */}
+        <header className="bg-white border-b flex-shrink-0">
+          <div className="px-4 py-2.5 flex items-center justify-between">
+            <button 
+              onClick={() => setHasEnteredApp(false)}
+              className="hover:opacity-70 transition-opacity"
+            >
+              <WaveLogoFull size="small" />
+            </button>
             <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowCalendar(false);
-                  setCalendarKey(prev => prev + 1); // Force reload next time
-                }}
-                className="text-gray-600 hover:text-sky-600 active:bg-sky-50 h-9 px-2"
-                style={{ touchAction: 'manipulation' }}
+              <FeedbackDialog
+                trigger={
+                  <Button variant="ghost" size="icon" className="relative">
+                    <MessageSquare className="w-5 h-5" />
+                  </Button>
+                }
+              />
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="relative"
+                onClick={() => setShowNotifications(true)}
               >
-                ← 뒤로
-              </Button>
-              <h1 className="text-base font-bold text-sky-800">캘린더</h1>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setShowCalendar(false);
-                  setShowProfile(true);
-                  setCalendarKey(prev => prev + 1); // Force reload next time
-                }}
-                className="text-gray-600 hover:text-sky-600 active:bg-sky-50 h-9 w-9"
-                style={{ touchAction: 'manipulation' }}
-              >
-                <User className="w-4 h-4" />
+                <Bell className="w-5 h-5" />
+                {notifications.length > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center px-1">
+                    {notifications.length > 9 ? '9+' : notifications.length}
+                  </span>
+                )}
               </Button>
             </div>
           </div>
         </header>
-        <main className="safe-bottom">
-          <CalendarPage accessToken={accessToken!} />
-        </main>
-        <Footer />
-      </div>
-    );
-  }
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'admin':
-        return <AdminPage accessToken={accessToken} />;
-      case 'chat':
-        if (!selectedCharacter) {
-          return (
-            <CharacterSelectionPage
-              accessToken={accessToken}
-              onCharacterSelect={handleCharacterSelect}
-              onTokenRefresh={refreshToken}
-            />
-          );
-        }
-        return (
-          <ChatPage
-            accessToken={accessToken}
-            characterId={selectedCharacter}
-            chatRoomId={selectedChatRoomId}
-            onBackToSelection={handleBackToCharacterSelection}
-            onTokenRefresh={refreshToken}
-          />
-        );
-      case 'diary':
-        return <DiaryPage accessToken={accessToken} onEmotionUpdate={() => setCalendarKey(prev => prev + 1)} />;
-      case 'report':
-        return <ReportPage accessToken={accessToken} onEmotionUpdate={() => setCalendarKey(prev => prev + 1)} />;
-      case 'community':
-        // Show user profile page
-        if (selectedUserId) {
-          return (
-            <UserProfilePage
-              accessToken={accessToken!}
-              userId={selectedUserId}
-              onBack={() => setSelectedUserId('')}
-              onPostClick={handlePostClick}
-            />
-          );
-        }
-        // Show post detail page
-        if (selectedPostId) {
-          return (
-            <CommunityPostDetailPage
-              accessToken={accessToken!}
-              postId={selectedPostId}
-              currentUserId={currentUserId}
-              onBack={handleBackToCommunity}
-              onUserClick={(userId) => setSelectedUserId(userId)}
-            />
-          );
-        }
-        // Show community list
-        return (
-        <CommunityPage
-          accessToken={accessToken || ""}
-          onPostClick={handlePostClick}
-          onUserClick={(userId) => setSelectedUserId?.(userId)} // Optional chaining
-        />
-        );
-      default:
-        return (
-          <CharacterSelectionPage
-          accessToken={accessToken || ""}
-          onCharacterSelect={handleCharacterSelect}
-          onTokenRefresh={refreshToken}
-        />
-        );
-    }
-  };
-
-  return (
-    <ErrorBoundary>
-      <div
-        className="min-h-screen bg-gradient-to-br from-sky-50 to-blue-50"
-        style={{ minHeight: "100dvh" }}
-      >
-        <header className="bg-white/90 backdrop-blur-sm border-b border-sky-100 sticky top-0 z-10 safe-top">
-          <div className="max-w-3xl mx-auto px-3 py-2.5 flex items-center justify-between">
-            <h1
-              className="text-lg font-semibold text-sky-800 cursor-pointer hover:text-sky-600 transition-colors"
-              onClick={handleLogoClick}
-            >
-              BreezI
-            </h1>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowCalendar?.(true)} // Optional chaining
-                className="text-gray-600 hover:text-sky-600 active:bg-sky-50 h-9 w-9"
-                style={{ touchAction: "manipulation" }}
-              >
-              <Calendar className="w-4 h-4" />
-            </Button>
-            {accessToken && (
-              <NotificationBell 
-                accessToken={accessToken} 
-                onNavigateToPost={(postId) => {
-                  setSelectedPostId(postId);
-                  setCurrentPage('community');
-                }}
-              />
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowProfile(true)}
-              className="text-gray-600 hover:text-sky-600 active:bg-sky-50 h-9 w-9"
-              style={{ touchAction: 'manipulation' }}
-            >
-              <User className="w-4 h-4" />
-            </Button>
-            <button
-              onClick={handleLogout}
-              className="text-sm text-gray-600 hover:text-sky-600 active:text-sky-700 transition-colors px-2 py-1"
-              style={{ touchAction: 'manipulation' }}
-            >
-              로그아웃
-            </button>
+        {/* Main Content */}
+        <main className="flex-1 overflow-hidden">
+          <div className="h-full">
+            {activeTab === 'wave' && <WaveTab />}
+            {activeTab === 'chat' && <ChatTab />}
+            {activeTab === 'diary' && <DiaryTab />}
+            {activeTab === 'report' && <ReportTab key={reportKey} />}
+            {activeTab === 'profile' && <ProfileTab onSignOut={handleSignOut} />}
+            {activeTab === 'admin' && isAdmin && <AdminTab />}
           </div>
-        </div>
-      </header>
+        </main>
 
-      <main className="max-w-3xl mx-auto safe-bottom px-2 sm:px-4 pb-24">
-        {renderPage()}
-      </main>
+        {/* Notification Dialog */}
+        <NotificationDialog
+          open={showNotifications}
+          onOpenChange={setShowNotifications}
+          notifications={notifications}
+          onNotificationsRead={handleNotificationsRead}
+        />
 
-      <Navigation 
-        currentPage={currentPage} 
-        onPageChange={(page) => {
-          setCurrentPage(page);
-          if (page === 'chat') {
-            setSelectedCharacter('');
-            setSelectedChatRoomId('');
-          }
-          if (page === 'community') {
-            setSelectedPostId('');
-          }
-        }}
-        isAdmin={isAdmin}
-      />
-      
-      <Footer />
+        {/* Bottom Navigation */}
+        <nav className="bg-white border-t flex-shrink-0 safe-area-bottom">
+          <div className="flex justify-around items-center h-16">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setActiveTab(tab.id);
+                    // Log tab view
+                    if (tab.id !== 'admin') {
+                      logUserAction('view', tab.id);
+                    }
+                    // Refresh report when switching to report tab
+                    if (tab.id === 'report') {
+                      setReportKey(prev => prev + 1);
+                    }
+                    // Refresh unread count when switching to chat tab
+                    if (tab.id === 'chat') {
+                      loadUnreadCount();
+                    }
+                  }}
+                  className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
+                    isActive
+                      ? 'text-blue-600'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : ''}`} />
+                  <span className={`text-xs mt-1 ${isActive ? 'font-semibold' : ''}`}>
+                    {tab.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+        
+        {/* Toast Notifications */}
+        <Toaster />
 
-      {/* Suspended Account Dialog */}
-      <SuspendedAccountDialog
-        open={showSuspendedDialog}
-        onOpenChange={handleSuspendedDialogClose}
-        suspendedInfo={suspendedInfo}
-        onSubmitUnbanRequest={handleSubmitUnbanRequest}
-      />
-      
-      {/* Toast Notifications */}
-      <Toaster position="top-center" richColors />
-      
-      {/* Feedback Button */}
-      {isAuthenticated && hasProfile && <FeedbackButton accessToken={accessToken} />}
-    </div>
-    
+        {/* Onboarding Tour */}
+        {showOnboarding && (
+          <OnboardingTour
+            onComplete={handleOnboardingComplete}
+            onSkip={handleOnboardingSkip}
+          />
+        )}
+      </div>
+    </DataCacheProvider>
     </ErrorBoundary>
   );
 }

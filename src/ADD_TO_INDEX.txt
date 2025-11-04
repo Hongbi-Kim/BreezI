@@ -1,0 +1,19 @@
+아래 코드를 /supabase/functions/server/index.tsx 파일의
+2920줄 (마지막 }); 다음, Deno.serve(app.fetch); 바로 앞)에 추가하세요:
+
+// ==================== PAYMENT (토스페이먼츠) ====================
+import { initPayment, confirmPayment, confirmItemPackagePayment } from './payment.tsx';
+
+app.post('/make-server-71735bdc/payment/init', async (c) => {
+  return await initPayment(c, supabase);
+});
+
+app.post('/make-server-71735bdc/payment/confirm', async (c) => {
+  return await confirmPayment(c, supabase);
+});
+
+app.post('/make-server-71735bdc/payment/confirm-item-package', async (c) => {
+  return await confirmItemPackagePayment(c, supabase);
+});
+
+(이 파일은 추가 후 삭제해도 됩니다)

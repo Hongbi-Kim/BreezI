@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain.chat_models import ChatOpenAI
+from langchain_naver import ChatClovaX
 
 app = FastAPI()
 
