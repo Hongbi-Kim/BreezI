@@ -10,8 +10,22 @@ import { Button } from './ui/button';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Label } from './ui/label';
 import { Crown, Sparkles, Check, CreditCard } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
-import { projectId, publicAnonKey } from '../utils/supabase/info';
+import { toast } from 'sonner';
+// import { projectId, publicAnonKey } from '../utils/supabase/info';
+
+const getSupabaseConfig = () => {
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+  const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!projectId || !publicAnonKey) {
+    throw new Error(
+      'Supabase 환경 변수가 설정되지 않았습니다.\n' +
+      '필요한 변수: VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_ANON_KEY'
+    );
+  }
+
+  return { projectId, publicAnonKey };
+};
 
 interface SubscriptionDialogProps {
   open: boolean;
