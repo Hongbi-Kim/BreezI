@@ -1,0 +1,11 @@
+{
+    "imports": {
+      "@langchain/core": "npm:@langchain/core@^1.0.2",
+      "@langchain/community": "npm:@langchain/community@^0.3.0",
+      "langchain": "npm:langchain@^0.3.0"
+    },
+    "tasks": {
+      "dev": "deno run --allow-net --allow-env --allow-read --watch index.tsx"
+    }
+  }
+  

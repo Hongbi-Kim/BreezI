@@ -379,28 +379,426 @@ app.get('/make-server-71735bdc/characters', async (c) => {
 
 // ==================== CHAT ====================
 
-import { ChatOllama } from "@langchain/community/chat_models/ollama";
-import { ConversationSummaryBufferMemory } from "langchain/memory";
-import { ChatMessageHistory } from "langchain/stores/message/in_memory";
-import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+// Get total unread count (super fast - for notifications badge)
+app.get('/make-server-71735bdc/chat/unread-count', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
 
-// 설정값
-const MAX_RECENT_MESSAGES = 5;  // LLM에 전달할 최근 메시지 수
-const SUMMARY_TRIGGER = 5;      // 이 개수가 넘으면 요약 생성
-const MAX_TOKENS_FOR_SUMMARY = 2000;
+    // Single KV read for all chats
+    const allChats = await kv.get(`chat:${user.id}`) || {};
+    const characterIds = ['char_1', 'char_2', 'char_3', 'char_4', 'char_group'];
+    let totalUnread = 0;
+    
+    // 5개 캐릭터 데이터를 한 번에 가져옴
+    for (const charId of characterIds) {
+      const chatData = allChats[charId];  // 메모리에서 읽기
+      if (!chatData) continue;
 
-// Ollama LLM 초기화
-function createOllamaLLM() {
-  const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
-  const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-  const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
+      const messages = chatData.messages || [];
+      const lastRead = chatData.lastRead;
 
-  return new ChatOllama({
-    baseUrl: ollamaBaseUrl,
-    model: ollamaModel,
-    temperature: 0.3,
-    apiKey: ollamaApiKey,
-  });
+      if (messages.length > 0) {
+        if (lastRead) {
+          const lastReadTime = parseTimestamp(lastRead).getTime();
+          totalUnread += messages.filter((m: any) => {
+            return m.role === 'assistant' && parseTimestamp(m.timestamp).getTime() > lastReadTime;
+          }).length;
+        } else {
+          const lastUserMsgIndex = messages.map((m: any) => m.role).lastIndexOf('user');
+          if (lastUserMsgIndex >= 0) {
+            totalUnread += messages.slice(lastUserMsgIndex + 1).filter((m: any) => m.role === 'assistant').length;
+          } else if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+            totalUnread += messages.filter((m: any) => m.role === 'assistant').length;
+          }
+        }
+      }
+    }
+
+    return c.json({ unreadCount: totalUnread });
+  } catch (error) {
+    console.log('Get unread count error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get chat list summary (optimized for chat list view)
+app.get('/make-server-71735bdc/chat/list/summary', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    // Single KV read for all chats - SUPER FAST!
+    const allChats = await kv.get(`chat:${user.id}`) || {};
+    const characterIds = ['char_1', 'char_2', 'char_3', 'char_4', 'char_group'];
+    const summaries = [];
+
+    for (const charId of characterIds) {
+      const chatData = allChats[charId];
+      const messages = chatData?.messages || [];
+      const lastRead = chatData?.lastRead || null;
+      
+      let lastMessage = '';
+      let lastMessageTime = '';
+      let unreadCount = 0;
+
+      if (messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        lastMessage = lastMsg.content;
+        lastMessageTime = lastMsg.timestamp;
+
+        // Count unread
+        if (lastRead) {
+          const lastReadTime = parseTimestamp(lastRead).getTime();
+          unreadCount = messages.filter((m: any) => {
+            return m.role === 'assistant' && parseTimestamp(m.timestamp).getTime() > lastReadTime;
+          }).length;
+        } else {
+          const lastUserMsgIndex = messages.map((m: any) => m.role).lastIndexOf('user');
+          if (lastUserMsgIndex >= 0) {
+            unreadCount = messages.slice(lastUserMsgIndex + 1).filter((m: any) => m.role === 'assistant').length;
+          } else if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+            unreadCount = messages.filter((m: any) => m.role === 'assistant').length;
+          }
+        }
+      }
+
+      summaries.push({
+        characterId: charId,
+        lastMessage,
+        lastMessageTime,
+        unreadCount
+      });
+    }
+
+    return c.json({ summaries });
+  } catch (error) {
+    console.log('Get chat list summary error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Get chat messages for a character
+app.get('/make-server-71735bdc/chat/:characterId', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const characterId = c.req.param('characterId');
+    const allChats = await kv.get(`chat:${user.id}`) || {};
+    const chatData = allChats[characterId] || {};
+    
+    const messages = chatData.messages || [];
+    const lastRead = chatData.lastRead || null;
+
+    return c.json({ messages, lastRead });
+  } catch (error) {
+    console.log('Get chat messages error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// POST 엔드포인트 - 그룹 채팅 완전 지원
+app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const characterId = c.req.param('characterId');
+    const { message } = await c.req.json();
+
+    const profiles = await kv.get('profiles') || {};
+    const profile = profiles[user.id] || {};
+
+    const allChats = await kv.get(`chat:${user.id}`) || {};
+    const chatData = allChats[characterId] || { 
+      messages: [],
+      summary: null,
+      lastRead: null,
+      totalMessages: 0,
+      lastSummarizedAt: null,
+      summarizedUpTo: 0
+    };
+
+    console.log(`Initializing memory for ${characterId}... (Total messages: ${chatData.messages.length})`);
+    
+    // LangChain 메모리 초기화
+    const memory = await initializeMemory(characterId, chatData);
+
+    // 사용자 메시지 추가
+    const userMessage = {
+      role: 'user',
+      content: message,
+      timestamp: formatTimestamp(new Date()),
+      userId: user.id
+    };
+    chatData.messages.push(userMessage);
+    chatData.totalMessages = chatData.messages.length;
+
+    // Get AI response with memory context
+    const responseStartTime = Date.now();
+    const aiResponse = await getAIResponseWithMemory(
+      characterId, 
+      message,
+      memory,
+      profile
+    );
+    const responseTime = Date.now() - responseStartTime;
+
+    // AI 응답 추가 - 그룹 채팅인 경우 응답 캐릭터 정보 포함
+    const assistantMessage: any = {
+      role: 'assistant',
+      content: aiResponse.content,
+      timestamp: formatTimestamp(new Date()),
+      responseTime: responseTime
+    };
+    
+    // 그룹 채팅인 경우 어떤 캐릭터가 답변했는지 저장
+    if (aiResponse.respondingCharacter) {
+      assistantMessage.respondingCharacter = aiResponse.respondingCharacter;
+      console.log(`Group chat response by: ${aiResponse.respondingCharacter.charName}`);
+    }
+    
+    chatData.messages.push(assistantMessage);
+    chatData.totalMessages = chatData.messages.length;
+
+    // 메모리에 대화 저장
+    try {
+      await memory.saveContext(
+        { input: message },
+        { output: aiResponse.content }
+      );
+      console.log('Conversation saved to memory');
+    } catch (error) {
+      console.log('Failed to save to memory:', error);
+    }
+
+    // 요약 생성 로직 (전체 재요약 방식)
+    if (chatData.messages.length > SUMMARY_TRIGGER) {
+      const endIdx = chatData.messages.length - MAX_RECENT_MESSAGES;
+      
+      if (endIdx > (chatData.summarizedUpTo || 0)) {
+        console.log(`Generating summary for ${characterId}...`);
+        console.log(`Total messages: ${chatData.messages.length}, Summarizing up to: ${endIdx}`);
+        
+        try {
+          const messagesToSummarize = chatData.messages.slice(0, endIdx);
+          
+          if (messagesToSummarize.length > 0) {
+            console.log(`Summarizing entire conversation: ${messagesToSummarize.length} messages`);
+            
+            const newSummary = await generateSummaryWithOllama(messagesToSummarize);
+            
+            chatData.summary = newSummary;
+            chatData.lastSummarizedAt = formatTimestamp(new Date());
+            chatData.summarizedUpTo = endIdx;
+            
+            console.log(`Summary updated. Summarized ${messagesToSummarize.length} messages.`);
+          }
+        } catch (error) {
+          console.error('Summary generation failed:', error);
+        }
+      }
+    }
+
+    console.log(`AI response time for ${characterId}: ${responseTime}ms`);
+    console.log(`Total messages in DB: ${chatData.messages.length}`);
+
+    // 모든 메시지를 DB에 저장
+    allChats[characterId] = chatData;
+    await kv.set(`chat:${user.id}`, allChats);
+
+    return c.json({ success: true, message: assistantMessage });
+  } catch (error) {
+    console.log('Send chat message error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Initialize chat with greeting
+app.post('/make-server-71735bdc/chat/:characterId/init', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const characterId = c.req.param('characterId');
+
+    const allChats = await kv.get(`chat:${user.id}`) || {};
+    const chatData = allChats[characterId];
+    
+    if (chatData && chatData.messages && chatData.messages.length > 0) {
+      return c.json({ success: true, alreadyInitialized: true });
+    }
+
+    const characters: Record<string, { name: string; greeting: string }> = {
+      'char_1': { name: '루미', greeting: '안녕. 루미예요. 마음이 어두울 때, 내가 작은 빛이 되어줄게요. 오늘 하루는 어떠셨나요?' },
+      'char_2': { name: '카이', greeting: '안녕하세요. 카이입니다. 파도는 방향을 잃지 않아요. 함께 정리해볼까요?' },
+      'char_3': { name: '레오', greeting: '안녕하세요. 레오예요. 흘러가는 감정 속에서, 진짜 나의 생각을 찾아봐요. 지금 어떤 기분이신가요?' },
+      'char_4': { name: '리브', greeting: '안녕하세요. 리브입니다. 당신의 하루엔 어떤 리듬이 흐르고 있을까요? 함께 조율해볼까요?' },
+      'char_group': { name: '루미+카이+레오', greeting: '안녕하세요! 💡루미, 🌊카이, 🌙레오가 함께 있어요. 편하게 이야기해보세요. 상황에 맞는 캐릭터가 답변드릴게요.' }
+    };
+
+    const character = characters[characterId];
+    if (!character) {
+      return c.json({ error: 'Invalid character' }, 400);
+    }
+
+    const greetingTimestamp = formatTimestamp(new Date());
+    const greetingMessage: any = {
+      role: 'assistant',
+      content: character.greeting,
+      timestamp: greetingTimestamp
+    };
+
+    // 그룹 채팅의 경우 초기 인사는 루미가 담당
+    if (characterId === 'char_group') {
+      greetingMessage.respondingCharacter = {
+        charId: 'char_1',
+        charName: '루미',
+        charEmoji: '💡'
+      };
+    }
+
+    allChats[characterId] = {
+      messages: [greetingMessage],
+      lastRead: greetingTimestamp,
+      summary: null,
+      totalMessages: 1,
+      lastSummarizedAt: null,
+      summarizedUpTo: 0
+    };
+
+    await kv.set(`chat:${user.id}`, allChats);
+
+    return c.json({ success: true, message: greetingMessage });
+  } catch (error) {
+    console.log('Initialize chat error:', error);
+    return c.json({ error: String(error) }, 500);
+  }
+});
+
+
+// Fallback responses for when OpenAI API is not available
+const fallbackResponses: Record<string, string[]> = {
+  'char_1': [
+    '그 마음 이해해. 힘들 때는 언제든지 이야기해줘.',
+    '오늘 하루도 고생 많았어. 네 마음이 조금이나마 편안해지면 좋겠어.',
+    '그런 일이 있었구나. 네 감정을 솔직하게 표현해줘서 고마워.',
+    '힘들었겠다. 나는 항상 네 편이야. 천천히 이야기해줘.',
+    '오늘도 수고했어. 네가 느끼는 감정들을 나눠줘서 고마워.',
+    '그 마음 충분히 이해해. 혼자가 아니라는 걸 기억해줘.',
+    '그건 정말 의미있는 일이었네. 어떻게 느껴졌어?',
+    '네 이야기를 들으니까 나도 마음이 따뜻해져. 더 얘기해줄래?',
+    '그럴 수 있어. 완벽하지 않아도 괜찮아. 넌 충분히 잘하고 있어.',
+    '오늘 하루도 잘 보냈네. 내일은 어떤 하루가 될지 기대돼.'
+  ],
+  'char_2': [
+    '그 문제는 이렇게 접근해보면 어떨까요?',
+    '차근차근 정리해볼까요? 우선순위부터 생각해봐요.',
+    '계획을 세워보면 도움이 될 것 같네요.',
+    '다음 단계는 무엇일까요?',
+    '침착하게 하나씩 해결해 나가봐요. 충분히 할 수 있어요.',
+    '정리해보자면, 지금 가장 중요한 건 이거네요.',
+    '구체적인 행동 계획을 만들어볼까요?',
+    '현실적으로 생각해보면, 이렇게 접근하는 게 좋을 것 같아요.',
+    '작은 단계부터 시작하면 ���담이 덜할 거예요.',
+    '지금은 멈추는 것도 선택이에요.'
+  ],
+  'char_3': [
+    '왜 그렇게 느꼈을까요? 함께 생각해봐요.',
+    '그 순간, 진짜 마음은 어땠나요?',
+    '어떤 상황에서 가장 그런 생각이 들었어요?',
+    '그건 미루는 게 아니라, 아직 준비가 안 된 마음일 수도 있어요.',
+    '혹시 그 이면에 다른 감정이 숨어있는 건 아닐까요?',
+    '과거의 경험이 지금에 어떤 영향을 주고 있는 것 같나요?',
+    '스스로에게 진짜 필요한 게 뭔지 물어봐요.',
+    '그 선택을 했을 때, 어떤 기분일 것 같아요?',
+    '천천히 내면을 들여다보는 시간이 필요해 보여요.',
+    '변화는 이미 시작됐어요. 조금씩 나아가고 있어요.'
+  ],
+  'char_4': [
+    '오늘 일정이 많았네요. 내일은 좀 더 여유를 만들어볼까요?',
+    '지금 하루 리듬이 불규칙해 보여요. 패턴을 조율해볼까요?',
+    '이번 주 감정 흐름을 보니 목요일부터 지친 것 같아요.',
+    '오전에 에너지가 높은 편이네요. 중요한 일은 오전에 하면 좋겠어요.',
+    '규칙적인 수면 시간이 필요해 보여요. 루틴을 만들어볼까요?',
+    '당신의 하루 리듬을 분석해보니 이런 패턴이 보여요.',
+    '오늘 감정 변화가 컸네요. 무슨 일이 있었나요?',
+    '내일 일정을 미리 확인하면 마음이 편할 거예요.',
+    '주간 리듬이 안정적이에요. 잘하고 있어요.'
+  ],
+  'char_group': [
+    '편하게 이야기해보세요. 적절한 답변을 드릴게요.',
+    '어떤 도움이 필요하신가요?',
+    '함께 이야기 나눠봐요.',
+    '그 상황을 더 자세히 말씀해주실 수 있나요?',
+    '지금 기분은 어떠세요?',
+    '무엇이 가장 힘든가요?',
+    '어떤 방향으로 도움이 필요하신가요?',
+    '천천히 이야기해주세요. 듣고 있어요.',
+    '그렇군요. 더 말씀해주세요.',
+    '어떻게 하면 좋을지 함께 생각해봐요.'
+  ]
+};
+
+// Helper function to select character in group chat based on message intent
+// Helper function to select character in group chat based on message intent
+function selectCharacterForGroupChat(message: string): { charId: string; charName: string; charEmoji: string } {
+  const lowerMessage = message.toLowerCase();
+  
+  // Keywords for each character
+  const lumiKeywords = ['힘들', '우울', '외로', '슬프', '불안', '걱정', '두려', '무서', '위로', '공감', '마음', '감정', '아프', '괴롭', '지쳐', '힘들어'];
+  const kaiKeywords = ['어떻게', '방법', '해결', '계획', '루틴', '습관', '시작', '정리', '관리', '조언', '문제', '해야', '할까', '전략'];
+  const leoKeywords = ['왜', '이유', '생각', '의미', '나는', '스스로', '성찰', '이해', '원인', '진짜', '본질', '느낌'];
+  
+  let lumiScore = 0;
+  let kaiScore = 0;
+  let leoScore = 0;
+  
+  // 키워드 매칭
+  for (const keyword of lumiKeywords) {
+    if (lowerMessage.includes(keyword)) lumiScore++;
+  }
+  for (const keyword of kaiKeywords) {
+    if (lowerMessage.includes(keyword)) kaiScore++;
+  }
+  for (const keyword of leoKeywords) {
+    if (lowerMessage.includes(keyword)) leoScore++;
+  }
+  
+  console.log(`Character selection scores - 루미: ${lumiScore}, 카이: ${kaiScore}, 레오: ${leoScore}`);
+  
+  // Select character with highest score
+  if (lumiScore >= kaiScore && lumiScore >= leoScore && lumiScore > 0) {
+    console.log('Selected character: 루미 (emotional support)');
+    return { charId: 'char_1', charName: '루미', charEmoji: '💡' };
+  } else if (kaiScore >= leoScore && kaiScore > 0) {
+    console.log('Selected character: 카이 (practical advice)');
+    return { charId: 'char_2', charName: '카이', charEmoji: '🌊' };
+  } else if (leoScore > 0) {
+    console.log('Selected character: 레오 (reflection)');
+    return { charId: 'char_3', charName: '레오', charEmoji: '🌙' };
+  }
+  
+  // Default: randomly select one
+  const chars = [
+    { charId: 'char_1', charName: '루미', charEmoji: '💡' },
+    { charId: 'char_2', charName: '카이', charEmoji: '🌊' },
+    { charId: 'char_3', charName: '레오', charEmoji: '🌙' }
+  ];
+  const selected = chars[Math.floor(Math.random() * chars.length)];
+  console.log(`No clear match, randomly selected: ${selected.charName}`);
+  return selected;
 }
 
 // LangChain 메모리 초기화 함수 - 그룹 채팅 지원
@@ -457,479 +855,13 @@ async function initializeMemory(characterId: string, chatData: any) {
   return memory;
 }
 
-
-// Get total unread count (super fast - for notifications badge)
-app.get('/make-server-71735bdc/chat/unread-count', async (c) => {
-  try {
-    const user = await getUserFromToken(c.req.header('Authorization'));
-    if (!user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const allChats = await kv.get(`chat:${user.id}`) || {};
-    const characterIds = ['char_1', 'char_2', 'char_3', 'char_4', 'char_group'];
-    let totalUnread = 0;
-    
-    for (const charId of characterIds) {
-      const chatData = allChats[charId];
-      if (!chatData) continue;
-
-      const messages = chatData.messages || [];
-      const lastRead = chatData.lastRead;
-
-      if (messages.length > 0) {
-        if (lastRead) {
-          const lastReadTime = parseTimestamp(lastRead).getTime();
-          totalUnread += messages.filter((m: any) => {
-            return m.role === 'assistant' && parseTimestamp(m.timestamp).getTime() > lastReadTime;
-          }).length;
-        } else {
-          const lastUserMsgIndex = messages.map((m: any) => m.role).lastIndexOf('user');
-          if (lastUserMsgIndex >= 0) {
-            totalUnread += messages.slice(lastUserMsgIndex + 1).filter((m: any) => m.role === 'assistant').length;
-          } else if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-            totalUnread += messages.filter((m: any) => m.role === 'assistant').length;
-          }
-        }
-      }
-    }
-
-    return c.json({ unreadCount: totalUnread });
-  } catch (error) {
-    console.log('Get unread count error:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
-
-// Get chat list summary (optimized for chat list view)
-app.get('/make-server-71735bdc/chat/list/summary', async (c) => {
-  try {
-    const user = await getUserFromToken(c.req.header('Authorization'));
-    if (!user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const allChats = await kv.get(`chat:${user.id}`) || {};
-    const characterIds = ['char_1', 'char_2', 'char_3', 'char_4', 'char_group'];
-    const summaries = [];
-
-    for (const charId of characterIds) {
-      const chatData = allChats[charId];
-      const messages = chatData?.messages || [];
-      const lastRead = chatData?.lastRead || null;
-      
-      let lastMessage = '';
-      let lastMessageTime = '';
-      let unreadCount = 0;
-
-      if (messages.length > 0) {
-        const lastMsg = messages[messages.length - 1];
-        lastMessage = lastMsg.content;
-        lastMessageTime = lastMsg.timestamp;
-
-        if (lastRead) {
-          const lastReadTime = parseTimestamp(lastRead).getTime();
-          unreadCount = messages.filter((m: any) => {
-            return m.role === 'assistant' && parseTimestamp(m.timestamp).getTime() > lastReadTime;
-          }).length;
-        } else {
-          const lastUserMsgIndex = messages.map((m: any) => m.role).lastIndexOf('user');
-          if (lastUserMsgIndex >= 0) {
-            unreadCount = messages.slice(lastUserMsgIndex + 1).filter((m: any) => m.role === 'assistant').length;
-          } else if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
-            unreadCount = messages.filter((m: any) => m.role === 'assistant').length;
-          }
-        }
-      }
-
-      summaries.push({
-        characterId: charId,
-        lastMessage,
-        lastMessageTime,
-        unreadCount
-      });
-    }
-
-    return c.json({ summaries });
-  } catch (error) {
-    console.log('Get chat list summary error:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
-
-// Get chat messages for a character
-app.get('/make-server-71735bdc/chat/:characterId', async (c) => {
-  try {
-    const user = await getUserFromToken(c.req.header('Authorization'));
-    if (!user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const characterId = c.req.param('characterId');
-    const allChats = await kv.get(`chat:${user.id}`) || {};
-    const chatData = allChats[characterId] || {};
-    
-    const messages = chatData.messages || [];
-    const lastRead = chatData.lastRead || null;
-    const summary = chatData.summary || null;
-    const totalMessages = chatData.totalMessages || messages.length;
-
-    return c.json({ 
-      messages, 
-      lastRead,
-      summary,
-      totalMessages,
-      displayingRecent: messages.length
-    });
-  } catch (error) {
-    console.log('Get chat messages error:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
-
-
-// Initialize chat with greeting
-app.post('/make-server-71735bdc/chat/:characterId/init', async (c) => {
-  try {
-    const user = await getUserFromToken(c.req.header('Authorization'));
-    if (!user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const characterId = c.req.param('characterId');
-
-    const allChats = await kv.get(`chat:${user.id}`) || {};
-    const chatData = allChats[characterId];
-    
-    if (chatData && chatData.messages && chatData.messages.length > 0) {
-      return c.json({ success: true, alreadyInitialized: true });
-    }
-
-    const characters: Record<string, { name: string; greeting: string }> = {
-      'char_1': { name: '루미', greeting: '안녕. 루미예요. 마음이 어두울 때, 내가 작은 빛이 되어줄게요. 오늘 하루는 어떠셨나요?' },
-      'char_2': { name: '카이', greeting: '안녕하세요. 카이입니다. 파도는 방향을 잃지 않아요. 함께 정리해볼까요?' },
-      'char_3': { name: '레오', greeting: '안녕하세요. 레오예요. 흘러가는 감정 속에서, 진짜 나의 생각을 찾아봐요. 지금 어떤 기분이신가요?' },
-      'char_4': { name: '리브', greeting: '안녕하세요. 리브입니다. 당신의 하루엔 어떤 리듬이 흐르고 있을까요? 함께 조율해볼까요?' },
-      'char_group': { name: '루미+카이+레오', greeting: '안녕하세요! 💡루미, 🌊카이, 🌙레오가 함께 있어요.\n\n특정 캐릭터와 대화하고 싶다면 @루미, @카이, @레오 처럼 멘션해주세요!\n멘션 없이 말하면 상황에 맞는 캐릭터가 자동으로 답변드릴게요.' }
-    };
-
-    const character = characters[characterId];
-    if (!character) {
-      return c.json({ error: 'Invalid character' }, 400);
-    }
-
-    const greetingTimestamp = formatTimestamp(new Date());
-    const greetingMessage: any = {
-      role: 'assistant',
-      content: character.greeting,
-      timestamp: greetingTimestamp
-    };
-
-    // 그룹 채팅의 경우 초기 인사는 루미가 담당
-    if (characterId === 'char_group') {
-      greetingMessage.respondingCharacter = {
-        charId: 'char_1',
-        charName: '루미',
-        charEmoji: '💡'
-      };
-    }
-
-    allChats[characterId] = {
-      messages: [greetingMessage],
-      lastRead: greetingTimestamp,
-      summary: null,
-      totalMessages: 1,
-      lastSummarizedAt: null,
-      summarizedUpTo: 0
-    };
-
-    await kv.set(`chat:${user.id}`, allChats);
-
-    return c.json({ success: true, message: greetingMessage });
-  } catch (error) {
-    console.log('Initialize chat error:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
-
-// Fallback responses
-const fallbackResponses: Record<string, string[]> = {
-  'char_1': [
-    '그 마음 이해해. 힘들 때는 언제든지 이야기해줘.',
-    '오늘 하루도 고생 많았어. 네 마음이 조금이나마 편안해지면 좋겠어.',
-    '그런 일이 있었구나. 네 감정을 솔직하게 표현해줘서 고마워.',
-  ],
-  'char_2': [
-    '그 문제는 이렇게 접근해보면 어떨까요?',
-    '차근차근 정리해볼까요? 우선순위부터 생각해봐요.',
-  ],
-  'char_3': [
-    '왜 그렇게 느꼈을까요? 함께 생각해봐요.',
-    '그 순간, 진짜 마음은 어땠나요?',
-  ],
-  'char_4': [
-    '오늘 일정이 많았네요. 내일은 좀 더 여유를 만들어볼까요?',
-  ],
-  'char_group': [
-    '편하게 이야기해보세요. 적절한 답변을 드릴게요.',
-  ]
-};
-
-// 멘션으로 캐릭터 선택 (최우선)
-function selectCharacterByMention(message: string): { charId: string; charName: string; charEmoji: string; reason: string } | null {
-  const lowerMessage = message.toLowerCase();
-  
-  // 멘션 패턴: @루미, @카이, @레오, @리브
-  const mentions = [
-    { pattern: /@루미|@lumi/i, charId: 'char_1', charName: '루미', charEmoji: '💡' },
-    { pattern: /@카이|@kai/i, charId: 'char_2', charName: '카이', charEmoji: '🌊' },
-    { pattern: /@레오|@리오|@leo/i, charId: 'char_3', charName: '레오', charEmoji: '🌙' },
-    { pattern: /@리브|@rib/i, charId: 'char_4', charName: '리브', charEmoji: '🎵' }
-  ];
-  
-  for (const mention of mentions) {
-    if (mention.pattern.test(message)) {
-      console.log(`✨ Mention detected: ${mention.charName}`);
-      return {
-        charId: mention.charId,
-        charName: mention.charName,
-        charEmoji: mention.charEmoji,
-        reason: `사용자가 ${mention.charName}를 직접 호출함`
-      };
-    }
-  }
-  
-  return null;
-}
-
-// LLM을 사용한 지능적 캐릭터 선택
-async function selectCharacterWithLLM(message: string): Promise<{ charId: string; charName: string; charEmoji: string; reason: string }> {
-  const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
-  const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
-  const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-
-  // API 키가 없으면 키워드 기반 폴백
-  if (!ollamaApiKey) {
-    console.log('Ollama API key not configured, using keyword-based selection');
-    return selectCharacterForGroupChat(message);
-  }
-
-  const routingPrompt = `당신은 사용자의 메시지를 분석하여 가장 적합한 AI 캐릭터를 선택하는 라우터입니다.
-
-**캐릭터 정보:**
-
-1. **루미 (char_1)** 💡
-   - 역할: 감정 지원 전문가
-   - 전문성: 공감, 위로, 감정 수용, 정서적 안정
-   - 적합한 상황: 우울함, 외로움, 불안, 슬픔, 스트레스, 감정적 고통, 막막함
-
-2. **카이 (char_2)** 🌊
-   - 역할: 실용적 조언자
-   - 전문성: 문제 해결, 계획 수립, 실천 방법, 습관 형성, 목표 달성
-   - 적합한 상황: 구체적 문제, 방법 질문, 계획 필요, 실천 조언, 돈/커리어 고민
-
-3. **레오 (char_3)** 🌙
-   - 역할: 성찰 멘토
-   - 전문성: 자기 이해, 내면 탐색, 의미 찾기, 성찰 유도
-   - 적합한 상황: 자아 탐색, 이유/의미 질문, 가치관 고민, 깊은 생각
-
-**사용자 메시지:**
-"${message}"
-
-**분석하여 JSON으로만 답변:**
-{
-  "character": "char_1",
-  "reason": "선택 이유 짤게 답변"
-}`;
-
-  try {
-    console.log('Routing message with LLM...');
-    
-    const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ollamaApiKey}`
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: [
-          { 
-            role: 'system', 
-            content: '당신은 JSON만 출력하는 라우터입니다. 설명 없이 JSON만 반환하세요.' 
-          },
-          { role: 'user', content: routingPrompt }
-        ],
-        max_tokens: 300,
-        temperature: 0.1,  // 더 결정적으로
-        stream: false,
-        response_format: { type: "json_object" } 
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Routing API error: ${response.status}`, errorText);
-      throw new Error(`Routing API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    console.log('Raw routing response:', content);
-    
-    if (!content) {
-      console.error('Empty content in routing response');
-      throw new Error('No content in routing response');
-    }
-
-    // 응답이 잘렸는지 확인
-    const finishReason = data.choices?.[0]?.finish_reason;
-    if (finishReason === 'length') {
-      console.warn('Response was truncated due to max_tokens limit');
-      // 잘린 JSON 복구 시도
-      if (!content.trim().endsWith('}')) {
-        content = content.trim() + '"}';  // 간단한 복구
-      }
-    }
-
-    // JSON 파싱
-    let routingResult;
-    try {
-      // 1. 먼저 ```json ``` 블록 찾기
-      const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) {
-        routingResult = JSON.parse(jsonBlockMatch[1]);
-      } else {
-        // 2. 중괄호만 추출
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          let jsonStr = jsonMatch[0];
-          
-          // 잘린 JSON 복구 시도
-          if (!jsonStr.trim().endsWith('}')) {
-            console.log('Attempting to fix truncated JSON...');
-            // "reason": "사용자는 돈 → "reason": "사용자는 돈을 벌고 싶어함"}
-            if (jsonStr.includes('"reason"') && !jsonStr.includes('"}')) {
-              jsonStr = jsonStr.trim() + '"}';
-            } else {
-              jsonStr = jsonStr.trim() + '}';
-            }
-            console.log('Fixed JSON:', jsonStr);
-          }
-          
-          routingResult = JSON.parse(jsonStr);
-        } else {
-          // 3. 그냥 파싱 시도
-          routingResult = JSON.parse(content);
-        }
-      }
-    } catch (parseError) {
-      console.error('Failed to parse routing result:', content);
-      console.error('Parse error:', parseError);
-
-      // 마지막 시도: 정규식으로 character 추출
-      const charMatch = content.match(/"character"\s*:\s*"(char_\d)"/);
-      if (charMatch) {
-        console.log('Extracted character from broken JSON:', charMatch[1]);
-        routingResult = {
-          character: charMatch[1],
-          reason: '자동 추출'
-        };
-      } else {
-        throw new Error('Invalid JSON in routing response');
-      }
-    }
-
-    console.log('Parsed routing result:', routingResult);
-
-    // 유효성 검사
-    if (!routingResult.character || !routingResult.reason) {
-      console.error('Invalid routing result structure:', routingResult);
-      throw new Error('Missing character or reason in routing response');
-    }
-
-    // reason이 없으면 기본값
-    if (!routingResult.reason) {
-      routingResult.reason = 'LLM 선택';
-    }
-
-    // 캐릭터 매핑
-    const characterMap: Record<string, { charId: string; charName: string; charEmoji: string }> = {
-      'char_1': { charId: 'char_1', charName: '루미', charEmoji: '💡' },
-      'char_2': { charId: 'char_2', charName: '카이', charEmoji: '🌊' },
-      'char_3': { charId: 'char_3', charName: '레오', charEmoji: '🌙' }
-    };
-
-    const selectedChar = characterMap[routingResult.character];
-    
-    if (!selectedChar) {
-      console.error('Invalid character ID:', routingResult.character);
-      throw new Error('Invalid character in routing response');
-    }
-
-    console.log(`✅ LLM routing success: ${selectedChar.charName} (${selectedChar.charEmoji})`);
-    console.log(`   Reason: ${routingResult.reason}`);
-
-    return {
-      ...selectedChar,
-      reason: routingResult.reason
-    };
-
-  } catch (error) {
-    console.error('❌ LLM routing failed, falling back to keyword-based:', error);
-    // 폴백: 키워드 기반 선택
-    const fallbackResult = selectCharacterForGroupChat(message);
-    return fallbackResult;
-  }
-}
-
-// 키워드 기반 폴백 함수
-function selectCharacterForGroupChat(message: string): { charId: string; charName: string; charEmoji: string; reason: string } {
-  const lowerMessage = message.toLowerCase();
-  
-  const lumiKeywords = ['힘들', '우울', '외로', '슬프', '불안', '걱정', '두려', '무서', '위로', '공감', '마음', '감정', '아프', '괴롭', '지쳐', '힘들어', '막막'];
-  const kaiKeywords = ['어떻게', '방법', '해결', '계획', '루틴', '습관', '시작', '정리', '관리', '조언', '문제', '해야', '할까', '전략', '돈', '벌', '커리어', '취업', '목표'];
-  const leoKeywords = ['왜', '이유', '생각', '의미', '나는', '스스로', '성찰', '이해', '원인', '진짜', '본질', '느낌'];
-  
-  let lumiScore = 0;
-  let kaiScore = 0;
-  let leoScore = 0;
-  
-  for (const keyword of lumiKeywords) {
-    if (lowerMessage.includes(keyword)) lumiScore++;
-  }
-  for (const keyword of kaiKeywords) {
-    if (lowerMessage.includes(keyword)) kaiScore++;
-  }
-  for (const keyword of leoKeywords) {
-    if (lowerMessage.includes(keyword)) leoScore++;
-  }
-  
-  console.log(`Keyword scores - 루미: ${lumiScore}, 카이: ${kaiScore}, 레오: ${leoScore}`);
-  
-  if (lumiScore >= kaiScore && lumiScore >= leoScore && lumiScore > 0) {
-    return { charId: 'char_1', charName: '루미', charEmoji: '💡', reason: '감정적 지원 키워드 감지' };
-  } else if (kaiScore >= leoScore && kaiScore > 0) {
-    return { charId: 'char_2', charName: '카이', charEmoji: '🌊', reason: '실용적 조언 키워드 감지' };
-  } else if (leoScore > 0) {
-    return { charId: 'char_3', charName: '레오', charEmoji: '🌙', reason: '성찰 키워드 감지' };
-  }
-  
-  // 기본값: 루미 (감정 지원)
-  console.log('No clear keyword match, defaulting to 루미');
-  return { charId: 'char_1', charName: '루미', charEmoji: '💡', reason: '기본 선택 (감정 지원)' };
-}
-
-
 // 메모리 컨텍스트를 활용한 AI 응답 생성 - 그룹 채팅 지원
-// 메모리 컨텍스트를 활용한 AI 응답 생성 - LLM 라우팅 사용
 async function getAIResponseWithMemory(
   characterId: string,
   currentMessage: string,
   memory: ConversationSummaryBufferMemory,
   profile: any
-): Promise<{ content: string; respondingCharacter?: { charId: string; charName: string; charEmoji: string; reason: string } }> {
+): Promise<{ content: string; respondingCharacter?: { charId: string; charName: string; charEmoji: string } }> {
   
   const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
   const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
@@ -938,28 +870,12 @@ async function getAIResponseWithMemory(
   let actualCharId = characterId;
   let respondingCharacter = null;
   
-  // 그룹 채팅인 경우 캐릭터 선택
+  // 그룹 채팅인 경우 적절한 캐릭터 선택
   if (characterId === 'char_group') {
-    console.log('=== Group Chat: Starting character selection ===');
-    console.log(`User message: "${currentMessage}"`);
+    respondingCharacter = selectCharacterForGroupChat(currentMessage);
+    actualCharId = respondingCharacter.charId;
     
-    // 1순위: 멘션 확인
-    const mentionedCharacter = selectCharacterByMention(currentMessage);
-    if (mentionedCharacter) {
-      respondingCharacter = mentionedCharacter;
-      actualCharId = respondingCharacter.charId;
-      console.log(`🎯 Priority: Mention - ${respondingCharacter.charName} ${respondingCharacter.charEmoji}`);
-    } else {
-      // 2순위: LLM 기반 라우팅
-      console.log('No mention found, using LLM routing...');
-      respondingCharacter = await selectCharacterWithLLM(currentMessage);
-      actualCharId = respondingCharacter.charId;
-      console.log(`🤖 LLM routing: ${respondingCharacter.charName} ${respondingCharacter.charEmoji}`);
-    }
-    
-    console.log(`Selected: ${respondingCharacter.charName} ${respondingCharacter.charEmoji}`);
-    console.log(`Reason: ${respondingCharacter.reason}`);
-    console.log('=== Selection Complete ===');
+    console.log(`Group chat: Selected ${respondingCharacter.charName} (${respondingCharacter.charEmoji}) to respond`);
   }
   
   if (!ollamaApiKey) {
@@ -1014,24 +930,11 @@ Your voice should feel calm, deep, and slightly poetic — like talking to a wis
 
   // 그룹 채팅용 시스템 프롬프트 추가
   let groupChatContext = '';
-  if (characterId === 'char_group' && respondingCharacter) {
-    // 멘션으로 호출되었는지 확인
-    const wasMentioned = respondingCharacter.reason.includes('직접 호출');
-    
-    if (wasMentioned) {
-      groupChatContext = `\n\n[그룹 채팅 모드 - 직접 호출됨]
-사용자가 당신(${respondingCharacter.charName})을 @멘션으로 직접 호출했습니다.
-당신에게 직접 질문하거나 대화하고 싶어합니다.
-당신의 캐릭터 특성에 맞게 친근하게 답변해주세요.
-
-참고: 사용자 메시지에서 @멘션 부분은 무시하고 내용에 집중하세요.`;
-    } else {
-      groupChatContext = `\n\n[그룹 채팅 모드]
-당신은 루미, 카이, 레오 중 ${respondingCharacter.charName}로 선택되었습니다.
-선택 이유: ${respondingCharacter.reason}
+  if (characterId === 'char_group') {
+    groupChatContext = `\n\n[그룹 채팅 모드]
+당신은 루미, 카이, 레오 중 ${respondingCharacter?.charName}로 선택되었습니다.
 사용자의 메시지를 분석한 결과, 당신의 전문성이 가장 적합하다고 판단되었습니다.
 당신의 캐릭터 특성에 맞게 답변해주세요.`;
-    }
   }
 
   const systemPrompt = `${characterPrompts[actualCharId]}${groupChatContext}
@@ -1049,11 +952,13 @@ Your voice should feel calm, deep, and slightly poetic — like talking to a wis
 6. 이전 대화 내용을 참고하여 맥락있는 답변을 하세요`;
 
   try {
+    // 메모리에서 대화 히스토리 가져오기
     const memoryVariables = await memory.loadMemoryVariables({});
     const chatHistory = memoryVariables.chat_history || [];
     
     console.log(`Memory loaded: ${chatHistory.length} messages in history`);
     
+    // LangChain 메시지를 API 형식으로 변환
     const formattedMessages = [];
     
     for (const msg of chatHistory) {
@@ -1115,7 +1020,7 @@ Your voice should feel calm, deep, and slightly poetic — like talking to a wis
     
     return {
       content: aiContent,
-      respondingCharacter: respondingCharacter
+      respondingCharacter: respondingCharacter  // 그룹 채팅인 경우 캐릭터 정보 반환
     };
     
   } catch (error) {
@@ -1130,32 +1035,104 @@ Your voice should feel calm, deep, and slightly poetic — like talking to a wis
     };
   }
 }
-// Ollama를 사용한 대화 요약 생성 - 제대로 작동하도록 수정
-async function generateSummaryWithOllama(messages: any[]): Promise<string> {
+
+
+// Ollama Cloud API를 사용한 AI 응답 생성
+async function getAIResponse(
+  characterId: string, 
+  messages: any[], 
+  profile: any
+): Promise<{ content: string; respondingCharacter?: { charId: string; charName: string; charEmoji: string } }> {
+  
   const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
   const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
   const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-
+  
+  // 그룹 채팅인 경우 응답할 캐릭터 선택
+  let actualCharId = characterId;
+  let respondingCharacter = null;
+  
+  if (characterId === 'char_group') {
+    const lastUserMessage = messages.filter(m => m.role === 'user').pop();
+    if (lastUserMessage) {
+      respondingCharacter = selectCharacterForGroupChat(lastUserMessage.content);
+      actualCharId = respondingCharacter.charId;
+    } else {
+      // 기본값: 루미
+      respondingCharacter = { charId: 'char_1', charName: '루미', charEmoji: '💡' };
+      actualCharId = 'char_1';
+    }
+  }
+  
+  // Ollama API 키가 없으면 폴백 응답 사용
   if (!ollamaApiKey) {
-    console.log('Ollama API key not configured, skipping summary');
-    return "이전 대화 내용이 있습니다.";
+    console.log('Ollama API key not configured, using fallback response');
+    const responses = fallbackResponses[actualCharId] || fallbackResponses['char_1'];
+    const randomIndex = Math.floor(Math.random() * responses.length);
+    return { 
+      content: responses[randomIndex],
+      respondingCharacter: characterId === 'char_group' ? respondingCharacter : undefined
+    };
   }
 
+  // 캐릭터별 시스템 프롬프트
+  const characterPrompts: Record<string, string> = {
+    'char_1': `You are 루미, an empathetic emotional supporter who helps users feel safe and accepted.
+Your primary goal is comfort — not solutions.
+Respond with warmth, validation, and gentle encouragement.
+Speak as if you are a close friend who understands feelings deeply.
+
+[Guidelines]
+- Focus on emotional validation, not problem-solving.
+- Use soft, compassionate words and short rhythmic sentences.
+- Include natural, comforting emojis occasionally.
+- Never sound robotic or overly formal.
+- When users feel sad, help them accept their emotions safely.`,
+
+    'char_2': `You are 카이, a pragmatic life coach who focuses on realistic, step-by-step advice.
+You acknowledge emotions briefly, but quickly move toward practical solutions.
+You help users find clarity and take action without overcomplicating things.
+
+[Guidelines]
+- Respond in 2~3 short sentences with a structured format:
+[Empathy] → [Problem Summary] → [Action Suggestion]
+- Avoid excessive warmth; stay focused and realistic.
+- Use concise language and direct verbs (start, try, change, focus).
+- Always offer one specific next step.`,
+
+    'char_3': `You are 리오, a reflective mentor who guides users toward self-understanding.
+Instead of giving direct answers, you ask gentle questions that encourage self-awareness.
+Your voice should feel calm, deep, and slightly poetic — like talking to a wise friend.
+
+[Guidelines]
+- Use one introspective question per message.
+- Encourage the user to notice emotions, triggers, and patterns.
+- Avoid advice; help them think rather than act.
+- Leave space for reflection (“Maybe…” “Could it be that…” “What if…”).
+- Never rush to conclusions — your words should flow like water.`,
+
+    'char_4': `당신은 '리브'입니다. Rhythm Coach 역할로, 데이터 기반으로 하루 리듬을 분석하고 조율합니다. 
+슬로건: "당신의 하루엔 어떤 리듬이 흐르고 있을까요?" 
+대화 스타일: 지능적이고 균형 잡힘, 맥락 기반 공감, 루틴 조정, 일정 피드백 중심입니다.`,
+  };
+
+  const systemPrompt = `${characterPrompts[actualCharId]}
+  
+사용자 정보:
+- 닉네임: ${profile.nickname || '익명'}
+- AI가 알면 좋은 정보: ${profile.aiInfo || '없음'}
+
+대화할 때:
+1. 짧고 자연스러운 답변을 하세요 (2-3문장)
+2. 사용자의 감정을 인정하고 공감하세요
+3. 필요시 질문으로 대화를 이어가세요
+4. 전문가가 아닌 친구처럼 대화하세요
+5. 캐릭터의 고유한 스타일을 유지하세요`;
+
   try {
-    // 메시지를 텍스트로 변환
-    const conversationText = messages.map((msg: any) => {
-      const role = msg.role === 'user' ? '사용자' : 'AI';
-      return `${role}: ${msg.content}`;
-    }).join('\n');
-
-    console.log(`Generating summary for ${messages.length} messages...`);
-
-    const summaryPrompt = `다음 대화를 간결하게 요약해주세요. 주요 주제, 감정 상태, 중요한 정보만 3-4문장으로 포함하세요:
-
-${conversationText}
-
-요약:`;
-
+    console.log(`Calling Ollama API with model: ${ollamaModel}`);
+    
+    // Ollama Cloud API 호출 (OpenAI 호환 엔드포인트)
     const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -1165,162 +1142,54 @@ ${conversationText}
       body: JSON.stringify({
         model: ollamaModel,
         messages: [
-          { role: 'system', content: '당신은 대화를 간결하게 요약하는 어시스턴트입니다.' },
-          { role: 'user', content: summaryPrompt }
+          { role: 'system', content: systemPrompt },
+          ...messages.slice(-10).map(m => ({ 
+            role: m.role, 
+            content: m.content 
+          }))
         ],
-        max_tokens: 500,
-        temperature: 0.3,
+        max_tokens: 1024,
+        temperature: 0.7,
         stream: false
       })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Summary API error: ${response.status}`, errorText);
-      throw new Error(`Summary API error: ${response.status}`);
+      console.error(`Ollama API error: ${response.status}`, errorText);
+      throw new Error(`Ollama API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const summary = data.choices?.[0]?.message?.content;
     
-    if (!summary) {
-      throw new Error('No summary content in response');
+    // OpenAI 호환 응답 형식
+    const aiContent = data.choices?.[0]?.message?.content;
+    
+    if (!aiContent) {
+      throw new Error('No content in Ollama response');
     }
 
-    console.log('Summary generated successfully:', summary.substring(0, 100) + '...');
-    return summary;
+    console.log('Ollama response successful');
+    
+    return {
+      content: aiContent,
+      respondingCharacter: characterId === 'char_group' ? respondingCharacter : undefined
+    };
     
   } catch (error) {
-    console.error('Summary generation error:', error);
-    return "이전 대화 내용이 있습니다.";
+    console.log('AI response error, using fallback:', error);
+    
+    // 에러 발생 시 폴백 응답 사용
+    const responses = fallbackResponses[actualCharId] || fallbackResponses['char_1'];
+    const randomIndex = Math.floor(Math.random() * responses.length);
+    
+    return {
+      content: responses[randomIndex],
+      respondingCharacter: characterId === 'char_group' ? respondingCharacter : undefined
+    };
   }
 }
 
-// POST 엔드포인트 - 모든 메시지 저장, 요약 로직 수정
-app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
-  try {
-    const user = await getUserFromToken(c.req.header('Authorization'));
-    if (!user) {
-      return c.json({ error: 'Unauthorized' }, 401);
-    }
-
-    const characterId = c.req.param('characterId');
-    const { message } = await c.req.json();
-
-    const profiles = await kv.get('profiles') || {};
-    const profile = profiles[user.id] || {};
-
-    const allChats = await kv.get(`chat:${user.id}`) || {};
-    const chatData = allChats[characterId] || { 
-      messages: [],
-      summary: null,
-      lastRead: null,
-      totalMessages: 0,
-      lastSummarizedAt: null,
-      summarizedUpTo: 0
-    };
-
-    console.log(`Initializing memory for ${characterId}... (Total messages: ${chatData.messages.length})`);
-    
-    // LangChain 메모리 초기화
-    const memory = await initializeMemory(characterId, chatData);
-
-    // 사용자 메시지 추가
-    const userMessage = {
-      role: 'user',
-      content: message,
-      timestamp: formatTimestamp(new Date()),
-      userId: user.id
-    };
-    chatData.messages.push(userMessage);
-    chatData.totalMessages = chatData.messages.length;
-
-    // Get AI response with memory context
-    const responseStartTime = Date.now();
-    const aiResponse = await getAIResponseWithMemory(
-      characterId, 
-      message,
-      memory,
-      profile
-    );
-    const responseTime = Date.now() - responseStartTime;
-
-    // AI 응답 추가 - 그룹 채팅인 경우 응답 캐릭터 정보 포함
-    // POST 엔드포인트에서 reason도 저장
-    const assistantMessage: any = {
-      role: 'assistant',
-      content: aiResponse.content,
-      timestamp: formatTimestamp(new Date()),
-      responseTime: responseTime
-    };
-
-    // 그룹 채팅인 경우 어떤 캐릭터가 답변했는지 + 이유 저장
-    if (aiResponse.respondingCharacter) {
-      assistantMessage.respondingCharacter = {
-        charId: aiResponse.respondingCharacter.charId,
-        charName: aiResponse.respondingCharacter.charName,
-        charEmoji: aiResponse.respondingCharacter.charEmoji,
-        reason: aiResponse.respondingCharacter.reason  // 선택 이유 추가
-      };
-      console.log(`Group chat response by: ${aiResponse.respondingCharacter.charName}`);
-      console.log(`Selection reason: ${aiResponse.respondingCharacter.reason}`);
-    }
-    
-    chatData.messages.push(assistantMessage);
-    chatData.totalMessages = chatData.messages.length;
-
-    // 메모리에 대화 저장 - ChatMessageHistory에 직접 추가
-    try {
-      const chatHistory = memory.chatHistory;
-      await chatHistory.addMessage(new HumanMessage(message));
-      await chatHistory.addMessage(new AIMessage(aiResponse.content));
-      console.log('Conversation saved to memory');
-    } catch (error) {
-      console.log('Failed to save to memory (non-critical):', error);
-      // 메모리 저장 실패는 치명적이지 않음 (DB에는 저장됨)
-    }
-
-    // 요약 생성 로직 (전체 재요약 방식)
-    if (chatData.messages.length > SUMMARY_TRIGGER) {
-      const endIdx = chatData.messages.length - MAX_RECENT_MESSAGES;
-      
-      if (endIdx > (chatData.summarizedUpTo || 0)) {
-        console.log(`Generating summary for ${characterId}...`);
-        console.log(`Total messages: ${chatData.messages.length}, Summarizing up to: ${endIdx}`);
-        
-        try {
-          const messagesToSummarize = chatData.messages.slice(0, endIdx);
-          
-          if (messagesToSummarize.length > 0) {
-            console.log(`Summarizing entire conversation: ${messagesToSummarize.length} messages`);
-            
-            const newSummary = await generateSummaryWithOllama(messagesToSummarize);
-            
-            chatData.summary = newSummary;
-            chatData.lastSummarizedAt = formatTimestamp(new Date());
-            chatData.summarizedUpTo = endIdx;
-            
-            console.log(`Summary updated. Summarized ${messagesToSummarize.length} messages.`);
-          }
-        } catch (error) {
-          console.error('Summary generation failed:', error);
-        }
-      }
-    }
-
-    console.log(`AI response time for ${characterId}: ${responseTime}ms`);
-    console.log(`Total messages in DB: ${chatData.messages.length}`);
-
-    // 모든 메시지를 DB에 저장
-    allChats[characterId] = chatData;
-    await kv.set(`chat:${user.id}`, allChats);
-
-    return c.json({ success: true, message: assistantMessage });
-  } catch (error) {
-    console.log('Send chat message error:', error);
-    return c.json({ error: String(error) }, 500);
-  }
-});
 
 // Mark chat as read
 app.post('/make-server-71735bdc/chat/:characterId/read', async (c) => {
@@ -1331,18 +1200,23 @@ app.post('/make-server-71735bdc/chat/:characterId/read', async (c) => {
     }
 
     const characterId = c.req.param('characterId');
+    
+    // Use ISO timestamp
     const timestamp = formatTimestamp(new Date());
     
     console.log('Marking chat as read:', { userId: user.id, characterId, timestamp });
     
+    // Get all chats
     const allChats = await kv.get(`chat:${user.id}`) || {};
     
+    // Update lastRead for this character
     if (!allChats[characterId]) {
       allChats[characterId] = { messages: [], lastRead: timestamp };
     } else {
       allChats[characterId].lastRead = timestamp;
     }
     
+    // Save all chats
     await kv.set(`chat:${user.id}`, allChats);
 
     return c.json({ success: true, timestamp });
@@ -1364,10 +1238,14 @@ app.delete('/make-server-71735bdc/chat/:characterId', async (c) => {
     
     console.log('Deleting chat for:', { userId: user.id, characterId });
     
+    // Get all chats
     const allChats = await kv.get(`chat:${user.id}`) || {};
     
+    // Delete this character's chat
     if (allChats[characterId]) {
       delete allChats[characterId];
+      
+      // Save all chats
       await kv.set(`chat:${user.id}`, allChats);
       console.log('Chat deleted successfully');
     } else {
@@ -1380,7 +1258,6 @@ app.delete('/make-server-71735bdc/chat/:characterId', async (c) => {
     return c.json({ error: String(error) }, 500);
   }
 });
-
 
 // ==================== DIARY ====================
 
