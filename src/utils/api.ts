@@ -1,8 +1,25 @@
-import { projectId, publicAnonKey } from './supabase/info';
+// import { projectId, publicAnonKey } from './supabase/info';
 import { createClient, getAccessToken } from './supabase/client';
+
+// 환경 변수에서 Supabase 설정 가져오기
+const getSupabaseConfig = () => {
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+  const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!projectId || !publicAnonKey) {
+    throw new Error(
+      'Supabase 환경 변수가 설정되지 않았습니다.\n' +
+      '필요한 변수: VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_ANON_KEY'
+    );
+  }
+
+  return { projectId, publicAnonKey };
+};
 
 // 환경에 따라 API Base URL 결정
 const getApiBase = () => {
+  const { projectId } = getSupabaseConfig();
+
   // 1. 환경 변수로 명시적으로 설정된 경우 (최우선)
   if (import.meta.env.VITE_API_URL) {
     const url = import.meta.env.VITE_API_URL;
@@ -51,6 +68,7 @@ export async function apiCall(
       throw new Error('No valid session found');
     }
   } else {
+    const { publicAnonKey } = getSupabaseConfig();
     token = publicAnonKey;
   }
   
