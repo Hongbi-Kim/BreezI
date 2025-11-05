@@ -1,5 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import { projectId, publicAnonKey } from './info';
+// import { projectId, publicAnonKey } from './info';
 
 let supabaseInstance: ReturnType<typeof createSupabaseClient> | null = null;
 
@@ -12,6 +12,17 @@ let supabaseInstance: ReturnType<typeof createSupabaseClient> | null = null;
  */
 export function createClient() {
   if (!supabaseInstance) {
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    const publicAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
+    // 환경 변수가 없는 경우 에러 처리
+    if (!projectId || !publicAnonKey) {
+      throw new Error(
+        'Supabase 환경 변수가 설정되지 않았습니다. .env 파일을 확인하세요.\n' +
+        '필요한 변수: VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_ANON_KEY'
+      );
+    }
+
     supabaseInstance = createSupabaseClient(
       `https://${projectId}.supabase.co`,
       publicAnonKey,
