@@ -889,7 +889,7 @@ function selectCharacterForGroupChat(message: string): { charId: string; charNam
   const lowerMessage = message.toLowerCase();
   
   const lumiKeywords = ['힘들', '우울', '외로', '슬프', '불안', '걱정', '두려', '무서', '위로', '공감', '마음', '감정', '아프', '괴롭', '지쳐', '힘들어', '막막'];
-  const kaiKeywords = ['어떻게', '방법', '해결', '계획', '루틴', '습관', '시작', '정리', '관리', '조언', '문제', '해야', '할까', '전략', '돈', '커리어', '취업', '목표'];
+  const kaiKeywords = ['어떻게', '방법', '해결', '계획', '루틴', '습관', '시작', '정리', '관리', '조언', '문제', '전략', '돈', '커리어', '취업', '목표'];
   const leoKeywords = ['왜', '이유', '생각', '의미', '나는', '스스로', '성찰', '이해', '원인', '진짜', '본질', '느낌'];
   
   let lumiScore = 0;
