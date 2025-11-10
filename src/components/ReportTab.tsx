@@ -49,6 +49,8 @@ export function ReportTab() {
   const [selectedDiary, setSelectedDiary] = useState<any>(null);
 
   useEffect(() => {
+    console.log('[ReportTab] 🟢 Component MOUNTED');
+    
     loadReports().then((data) => {
       if (data) {
         setWeekData(data.week);
@@ -57,6 +59,10 @@ export function ReportTab() {
     }).catch((error) => {
       console.error('[ReportTab] Failed to load reports:', error);
     });
+    
+    return () => {
+      console.log('[ReportTab] 🔴 Component UNMOUNTED');
+    };
     // Empty dependency array - only run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

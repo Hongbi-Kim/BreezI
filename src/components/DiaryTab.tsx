@@ -98,6 +98,8 @@ export function DiaryTab() {
   const [sinkingDiary, setSinkingDiary] = useState<any>(null);
 
   useEffect(() => {
+    console.log('[DiaryTab] 🟢 Component MOUNTED');
+    
     // Set initial date
     const initialDate = getTodayDate();
     setCurrentDate(initialDate);
@@ -137,7 +139,10 @@ export function DiaryTab() {
       }
     }, 60000); // Check every minute
 
-    return () => clearInterval(intervalId);
+    return () => {
+      console.log('[DiaryTab] 🔴 Component UNMOUNTED');
+      clearInterval(intervalId);
+    };
     // Empty dependency array - only run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

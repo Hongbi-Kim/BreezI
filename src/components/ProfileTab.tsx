@@ -125,8 +125,14 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
   const [showPrivacyDialog, setShowPrivacyDialog] = useState(false);
 
   useEffect(() => {
+    console.log('[ProfileTab] 🟢 Component MOUNTED');
+    
     loadProfileData();
     // Don't load memories on mount - load them lazily when user expands the section
+    
+    return () => {
+      console.log('[ProfileTab] 🔴 Component UNMOUNTED');
+    };
   }, []);
 
   // Load memories only when the section is opened

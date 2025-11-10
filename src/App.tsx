@@ -29,7 +29,6 @@ export default function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [hasEnteredApp, setHasEnteredApp] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
-  const [reportKey, setReportKey] = useState(0);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -422,7 +421,7 @@ export default function App() {
             {activeTab === 'wave' && <WaveTab />}
             {activeTab === 'chat' && <ChatTab />}
             {activeTab === 'diary' && <DiaryTab />}
-            {activeTab === 'report' && <ReportTab key={reportKey} />}
+            {activeTab === 'report' && <ReportTab />}
             {activeTab === 'profile' && <ProfileTab onSignOut={handleSignOut} />}
             {activeTab === 'admin' && isAdmin && <AdminTab />}
           </div>
@@ -448,15 +447,11 @@ export default function App() {
                   key={tab.id}
                   onClick={() => {
                     setActiveTab(tab.id);
-                    // Log tab view
+                    // Log tab view (disabled - see logUserAction.ts)
                     if (tab.id !== 'admin') {
                       logUserAction('view', tab.id);
                     }
-                    // Refresh report when switching to report tab
-                    if (tab.id === 'report') {
-                      setReportKey(prev => prev + 1);
-                    }
-                    // Don't refresh unread count on tab switch - rely on interval polling
+                    // Don't force refresh report - let cache handle it
                   }}
                   className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
                     isActive

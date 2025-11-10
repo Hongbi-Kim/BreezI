@@ -57,6 +57,23 @@ console.log('🔗 API Base URL:', API_BASE);
 const retryAttempts = new Map<string, number>();
 const MAX_RETRIES = 1;
 
+// API call counter for debugging
+let apiCallCount = 0;
+let apiCallCountResetInterval: NodeJS.Timeout | null = null;
+
+// Reset counter every 10 seconds and log
+if (typeof window !== 'undefined') {
+  apiCallCountResetInterval = setInterval(() => {
+    if (apiCallCount > 0) {
+      console.log(`[API Monitor] 📊 API calls in last 10s: ${apiCallCount}`);
+      if (apiCallCount > 20) {
+        console.warn(`[API Monitor] ⚠️ HIGH API USAGE: ${apiCallCount} calls in 10 seconds!`);
+      }
+    }
+    apiCallCount = 0;
+  }, 10000);
+}
+
 export async function apiCall(
   endpoint: string,
   options: RequestInit = {},
@@ -79,8 +96,11 @@ export async function apiCall(
   const url = `${API_BASE}${endpoint}`;
   const requestKey = `${endpoint}:${options.method || 'GET'}`;
   
+  // Increment API call counter
+  apiCallCount++;
+  
   // 디버깅 로그 (항상 출력하여 API 호출 추적)
-  console.log('📡 API Call:', {
+  console.log(`📡 API Call #${apiCallCount}:`, {
     endpoint,
     method: options.method || 'GET',
     hasAuth: !!token,

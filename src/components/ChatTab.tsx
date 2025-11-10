@@ -49,6 +49,8 @@ export function ChatTab() {
   const [showProDialog, setShowProDialog] = useState(false);
 
   useEffect(() => {
+    console.log('[ChatTab] 🟢 Component MOUNTED');
+    
     // Load user's Pro status from cache (no API call if cached)
     const loadProStatus = async () => {
       try {
@@ -60,6 +62,10 @@ export function ChatTab() {
     };
     
     loadProStatus();
+    
+    return () => {
+      console.log('[ChatTab] 🔴 Component UNMOUNTED');
+    };
   }, [loadProfile]);
 
   useEffect(() => {
