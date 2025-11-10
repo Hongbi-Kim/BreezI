@@ -71,12 +71,31 @@ export default function App() {
     if (isAuthenticated && !needsProfileSetup && hasEnteredApp) {
       loadUnreadCount();
       loadNotifications();
-      // Refresh unread count and notifications every 30 seconds
+      
+      // Refresh unread count and notifications every 60 seconds (increased from 30s)
       const interval = setInterval(() => {
-        loadUnreadCount();
-        loadNotifications();
-      }, 30000);
-      return () => clearInterval(interval);
+        // Only refresh if page is visible (user is actively using the app)
+        if (document.visibilityState === 'visible') {
+          loadUnreadCount();
+          loadNotifications();
+        }
+      }, 60000); // Changed to 60 seconds
+      
+      // Also refresh when user returns to the tab
+      const handleVisibilityChange = () => {
+        if (document.visibilityState === 'visible' && isAuthenticated) {
+          console.log('[App] Page became visible, refreshing data...');
+          loadUnreadCount();
+          loadNotifications();
+        }
+      };
+      
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      
+      return () => {
+        clearInterval(interval);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      };
     }
   }, [isAuthenticated, needsProfileSetup, hasEnteredApp]);
 
@@ -93,15 +112,31 @@ export default function App() {
       setUnreadCount(data.unreadCount || 0);
     } catch (error: any) {
       // Silently handle network errors and session issues
-      if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
-        console.log('Skipping unread count load:', error.message);
+      if (error.message?.includes('Failed to fetch')) {
+        console.log('[App] Network error loading unread count, will retry later');
         return;
       }
-      console.error('Failed to load unread count:', error);
-      // If unauthorized, clear auth state
-      if (error.message?.includes('401')) {
-        handleAuthError();
+      
+      if (error.message?.includes('No valid session')) {
+        console.log('[App] No valid session, checking auth state...');
+        // Don't immediately logout, verify session first
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.log('[App] Session truly invalid, logging out');
+          handleAuthError();
+        }
+        return;
       }
+      
+      // Session expired error from API
+      if (error.message?.includes('Session expired')) {
+        console.log('[App] Session expired, logging out');
+        handleAuthError();
+        return;
+      }
+      
+      console.error('Failed to load unread count:', error);
     }
   };
 
@@ -122,15 +157,31 @@ export default function App() {
       setNotifications(newNotifications);
     } catch (error: any) {
       // Silently handle network errors and session issues
-      if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
-        console.log('Skipping notifications load:', error.message);
+      if (error.message?.includes('Failed to fetch')) {
+        console.log('[App] Network error loading notifications, will retry later');
         return;
       }
-      console.error('Failed to load notifications:', error);
-      // If unauthorized, clear auth state
-      if (error.message?.includes('401')) {
-        handleAuthError();
+      
+      if (error.message?.includes('No valid session')) {
+        console.log('[App] No valid session for notifications, checking auth state...');
+        // Don't immediately logout, verify session first
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          console.log('[App] Session truly invalid, logging out');
+          handleAuthError();
+        }
+        return;
       }
+      
+      // Session expired error from API
+      if (error.message?.includes('Session expired')) {
+        console.log('[App] Session expired, logging out');
+        handleAuthError();
+        return;
+      }
+      
+      console.error('Failed to load notifications:', error);
     }
   };
 
@@ -160,10 +211,16 @@ export default function App() {
     try {
       // Check if user has existing session
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        console.error('[App] Error getting session:', sessionError);
+        setIsLoading(false);
+        return;
+      }
 
       if (session?.access_token) {
-        console.log('[App] Active session found');
+        console.log('[App] Active session found, expires at:', new Date(session.expires_at! * 1000).toLocaleString());
         
         // Verify profile exists
         try {
@@ -177,30 +234,39 @@ export default function App() {
             }
           }
         } catch (error: any) {
-          // Silently handle network errors and session issues during initial load
-          if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
-            console.log('Skipping profile check:', error.message);
-            // Continue with authenticated state
-          } else if (error.message?.includes('401')) {
-            // If unauthorized, session is invalid
-            console.log('[App] Session invalid, signing out...');
+          // Handle different error types more carefully
+          if (error.message?.includes('Failed to fetch')) {
+            console.log('[App] Network error during profile check, continuing with session');
+            // Continue with authenticated state - network issues shouldn't log user out
+          } else if (error.message?.includes('No valid session')) {
+            // Verify again if session is truly invalid
+            console.log('[App] Session might be invalid, verifying...');
+            const { data: { session: recheck } } = await supabase.auth.getSession();
+            if (!recheck) {
+              console.log('[App] Session confirmed invalid, signing out...');
+              await handleAuthError();
+              setIsLoading(false);
+              return;
+            }
+          } else if (error.message?.includes('Session expired')) {
+            // Session definitely expired
+            console.log('[App] Session expired, signing out...');
             await handleAuthError();
             setIsLoading(false);
             return;
           } else {
-            console.error('Profile check error:', error);
+            console.error('[App] Profile check error:', error);
+            // Don't logout on unknown errors during initial load
           }
         }
 
         setIsAuthenticated(true);
+      } else {
+        console.log('[App] No active session found');
       }
     } catch (error: any) {
-      // Silently handle initial auth check errors
-      if (error.message?.includes('Failed to fetch') || error.message?.includes('No valid session')) {
-        console.log('Skipping auth check:', error.message);
-      } else {
-        console.error('Auth check error:', error);
-      }
+      console.error('[App] Auth check error:', error);
+      // Don't logout on unexpected errors
     } finally {
       setIsLoading(false);
     }

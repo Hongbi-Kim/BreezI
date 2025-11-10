@@ -53,6 +53,10 @@ console.log('🔗 API Base URL:', API_BASE);
  * - Supabase 세션에서 토큰을 자동으로 가져옴
  * - 401 에러 시 자동으로 세션 갱신 시도
  */
+// Track retry attempts to prevent infinite loops
+const retryAttempts = new Map<string, number>();
+const MAX_RETRIES = 1;
+
 export async function apiCall(
   endpoint: string,
   options: RequestInit = {},
@@ -73,67 +77,96 @@ export async function apiCall(
   }
   
   const url = `${API_BASE}${endpoint}`;
+  const requestKey = `${endpoint}:${options.method || 'GET'}`;
   
   // 디버깅 로그 (개발 환경에서만)
   if (import.meta.env.DEV) {
     console.log('📡 API Call:', {
       url,
       method: options.method || 'GET',
-      hasAuth: !!token
+      hasAuth: !!token,
+      retryCount: retryAttempts.get(requestKey) || 0
     });
   }
   
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-      ...options.headers,
-    },
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
+    });
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Network error' }));
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Network error' }));
+      
+      // 개발 환경에서 에러 로그
+      if (import.meta.env.DEV) {
+        console.error('❌ API Error:', {
+          status: response.status,
+          url,
+          error
+        });
+      }
+      
+      // If 401 and using auth, try to refresh the session
+      if (response.status === 401 && useAuth) {
+        const currentRetries = retryAttempts.get(requestKey) || 0;
+        
+        if (currentRetries >= MAX_RETRIES) {
+          console.error('[API] Max retries reached for', requestKey);
+          retryAttempts.delete(requestKey);
+          throw new Error('Session expired. Please log in again.');
+        }
+        
+        console.log('[API] 401 error, attempting to refresh session...');
+        
+        const supabase = createClient();
+        const { data, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (data.session?.access_token && !refreshError) {
+          console.log('[API] Session refreshed successfully, retrying request...');
+          retryAttempts.set(requestKey, currentRetries + 1);
+          
+          // Retry with new token (recursive call, but limited by MAX_RETRIES)
+          const result = await apiCall(endpoint, options, useAuth);
+          
+          // Clear retry count on success
+          retryAttempts.delete(requestKey);
+          return result;
+        } else {
+          // Session is truly invalid
+          console.error('[API] Session refresh failed:', refreshError);
+          retryAttempts.delete(requestKey);
+          throw new Error('Session expired. Please log in again.');
+        }
+      }
+      
+      throw new Error(error.error || `API error: ${response.status}`);
+    }
+
+    // Clear retry count on successful request
+    retryAttempts.delete(requestKey);
+
+    const data = await response.json();
     
-    // 개발 환경에서 에러 로그
+    // 개발 환경에서 응답 로그
     if (import.meta.env.DEV) {
-      console.error('❌ API Error:', {
-        status: response.status,
+      console.log('✅ API Response:', {
         url,
-        error
+        data
       });
     }
-    
-    // If 401 and using auth, try to refresh the session
-    if (response.status === 401 && useAuth) {
-      console.log('[API] 401 error, attempting to refresh session...');
-      
-      const supabase = createClient();
-      const { data, error: refreshError } = await supabase.auth.refreshSession();
-      
-      if (data.session?.access_token && !refreshError) {
-        console.log('[API] Session refreshed, retrying request...');
-        // Retry with new token (recursive call, but only once)
-        return apiCall(endpoint, options, useAuth);
-      } else {
-        // Session is truly invalid
-        console.error('[API] Session refresh failed:', refreshError);
-        throw new Error('Session expired. Please log in again.');
-      }
+
+    return data;
+  } catch (fetchError: any) {
+    // Network errors (connection failed, timeout, etc.)
+    if (fetchError.message === 'Failed to fetch' || fetchError.name === 'TypeError') {
+      console.error('[API] Network error:', fetchError);
+      throw new Error('Failed to fetch');
     }
-    
-    throw new Error(error.error || `API error: ${response.status}`);
+    throw fetchError;
   }
-
-  const data = await response.json();
-  
-  // 개발 환경에서 응답 로그
-  if (import.meta.env.DEV) {
-    console.log('✅ API Response:', {
-      url,
-      data
-    });
-  }
-
-  return data;
 }
