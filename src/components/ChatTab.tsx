@@ -40,7 +40,7 @@ interface ChatListItem {
 type ViewMode = 'list' | 'chat' | 'profile';
 
 export function ChatTab() {
-  const { chatListData, loadChatList } = useDataCache();
+  const { chatListData, loadChatList, profileData, loadProfile } = useDataCache();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [chatList, setChatList] = useState<ChatListItem[]>([]);
   const [selectedChar, setSelectedChar] = useState<Character | null>(null);
@@ -49,18 +49,18 @@ export function ChatTab() {
   const [showProDialog, setShowProDialog] = useState(false);
 
   useEffect(() => {
-    // Load user's Pro status
+    // Load user's Pro status from cache (no API call if cached)
     const loadProStatus = async () => {
       try {
-        const data = await apiCall('/profile');
-        setIsPro(data.profile?.isPro || false);
+        const data = await loadProfile(); // Uses cache if available
+        setIsPro(data?.profile?.isPro || false);
       } catch (error) {
-        console.error('Failed to load pro status:', error);
+        console.error('[ChatTab] Failed to load pro status:', error);
       }
     };
     
     loadProStatus();
-  }, []);
+  }, [loadProfile]);
 
   useEffect(() => {
     if (viewMode === 'list') {

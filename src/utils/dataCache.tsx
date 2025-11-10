@@ -42,8 +42,8 @@ interface DataCacheContextType {
 
 const DataCacheContext = createContext<DataCacheContextType | undefined>(undefined);
 
-// Cache duration in milliseconds (30 seconds)
-const CACHE_DURATION = 30000;
+// Cache duration in milliseconds (2 minutes for better performance)
+const CACHE_DURATION = 120000;
 
 function createEmptyCache<T>(): CacheEntry<T> {
   return {
@@ -69,19 +69,20 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   const loadProfile = useCallback(async (force = false) => {
     // Return cached data if valid
     if (!force && isCacheValid(profileData.timestamp) && profileData.data) {
-      console.log('[DataCache] Returning cached profile data');
+      const cacheAge = Math.floor((Date.now() - profileData.timestamp) / 1000);
+      console.log(`[DataCache] ✅ Returning cached profile data (age: ${cacheAge}s)`);
       return profileData.data;
     }
 
     // If already loading, wait for current request
     if (profileData.loading) {
-      console.log('[DataCache] Profile already loading, waiting...');
+      console.log('[DataCache] ⏳ Profile already loading, waiting...');
       // Wait a bit and return cached data if available
       await new Promise(resolve => setTimeout(resolve, 100));
       return profileData.data;
     }
 
-    console.log('[DataCache] Loading profile data...');
+    console.log('[DataCache] 🔄 Loading profile data from API...');
     setProfileData(prev => ({ ...prev, loading: true, error: null }));
 
     try {
@@ -111,18 +112,19 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   const loadChatList = useCallback(async (force = false) => {
     // Return cached data if valid
     if (!force && isCacheValid(chatListData.timestamp) && chatListData.data) {
-      console.log('[DataCache] Returning cached chat list data');
+      const cacheAge = Math.floor((Date.now() - chatListData.timestamp) / 1000);
+      console.log(`[DataCache] ✅ Returning cached chat list data (age: ${cacheAge}s)`);
       return chatListData.data;
     }
 
     // If already loading, wait for current request
     if (chatListData.loading) {
-      console.log('[DataCache] Chat list already loading, waiting...');
+      console.log('[DataCache] ⏳ Chat list already loading, waiting...');
       await new Promise(resolve => setTimeout(resolve, 100));
       return chatListData.data;
     }
 
-    console.log('[DataCache] Loading chat list data...');
+    console.log('[DataCache] 🔄 Loading chat list data from API...');
     setChatListData(prev => ({ ...prev, loading: true, error: null }));
 
     try {

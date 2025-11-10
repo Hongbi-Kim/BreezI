@@ -75,14 +75,14 @@ export default function App() {
       loadUnreadCount();
       loadNotifications();
       
-      // Refresh unread count and notifications every 60 seconds (increased from 30s)
+      // Refresh unread count and notifications every 2 minutes (reduced frequency)
       const interval = setInterval(() => {
         // Only refresh if page is visible (user is actively using the app)
         if (document.visibilityState === 'visible') {
           loadUnreadCount();
           loadNotifications();
         }
-      }, 60000); // Changed to 60 seconds
+      }, 120000); // Changed to 2 minutes (120 seconds)
       
       // Also refresh when user returns to the tab
       const handleVisibilityChange = () => {
@@ -456,10 +456,7 @@ export default function App() {
                     if (tab.id === 'report') {
                       setReportKey(prev => prev + 1);
                     }
-                    // Refresh unread count when switching to chat tab
-                    if (tab.id === 'chat') {
-                      loadUnreadCount();
-                    }
+                    // Don't refresh unread count on tab switch - rely on interval polling
                   }}
                   className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
                     isActive

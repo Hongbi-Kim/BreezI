@@ -107,6 +107,7 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [aiMemories, setAiMemories] = useState<AIMemory[]>([]);
   const [isMemoriesOpen, setIsMemoriesOpen] = useState(false);
+  const [memoriesLoaded, setMemoriesLoaded] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const memoriesPerPage = 10;
 
@@ -125,8 +126,17 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
 
   useEffect(() => {
     loadProfileData();
-    loadMemoriesData();
+    // Don't load memories on mount - load them lazily when user expands the section
   }, []);
+
+  // Load memories only when the section is opened
+  useEffect(() => {
+    if (isMemoriesOpen && !memoriesLoaded) {
+      console.log('[ProfileTab] Loading AI memories lazily...');
+      loadMemoriesData();
+      setMemoriesLoaded(true);
+    }
+  }, [isMemoriesOpen, memoriesLoaded]);
 
   // Check nickname availability with debounce
   useEffect(() => {
@@ -142,7 +152,7 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
       return;
     }
 
-    // Debounce nickname check (wait 500ms after user stops typing)
+    // Debounce nickname check (wait 1 second after user stops typing to reduce API calls)
     setNicknameChecking(true);
     const timeout = setTimeout(async () => {
       try {
@@ -154,7 +164,7 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
       } finally {
         setNicknameChecking(false);
       }
-    }, 500);
+    }, 1000); // Increased from 500ms to 1000ms
 
     setNicknameCheckTimeout(timeout);
 

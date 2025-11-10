@@ -79,15 +79,14 @@ export async function apiCall(
   const url = `${API_BASE}${endpoint}`;
   const requestKey = `${endpoint}:${options.method || 'GET'}`;
   
-  // 디버깅 로그 (개발 환경에서만)
-  if (import.meta.env.DEV) {
-    console.log('📡 API Call:', {
-      url,
-      method: options.method || 'GET',
-      hasAuth: !!token,
-      retryCount: retryAttempts.get(requestKey) || 0
-    });
-  }
+  // 디버깅 로그 (항상 출력하여 API 호출 추적)
+  console.log('📡 API Call:', {
+    endpoint,
+    method: options.method || 'GET',
+    hasAuth: !!token,
+    retryCount: retryAttempts.get(requestKey) || 0,
+    timestamp: new Date().toISOString()
+  });
   
   try {
     const response = await fetch(url, {
