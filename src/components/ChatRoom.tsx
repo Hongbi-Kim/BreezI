@@ -16,6 +16,7 @@ import {
 import { apiCall } from '../utils/api';
 import { useDataCache } from '../utils/dataCache';
 import { toast } from 'sonner';
+import { ErrorFallback } from './ErrorFallback';
 import lumiAvatar from '../assets/bb838f8b452a418707049fd37137f29785a32e3b.png';
 import kaiAvatar from '../assets/fd812fd1d4483c3de83fd3b6669e7dbb28ec2697.png';
 import leoAvatar from '../assets/247a0132ddfa67d748af8ab8f8273ee53080b2f7.png';
@@ -83,25 +84,28 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadMessages();
-    markAsRead();
+    // Mark as read after a short delay to avoid simultaneous API calls
+    const markReadTimeout = setTimeout(() => {
+      markAsRead();
+    }, 500);
+    
+    return () => clearTimeout(markReadTimeout);
   }, [character.id]);
 
   const markAsRead = async () => {
     try {
       await apiCall(`/chat/${character.id}/read`, { method: 'POST' });
-      console.log('Chat marked as read');
-      // Immediately refresh chat list cache to update unread count
-      await refreshChatList();
+      console.log('[ChatRoom] Chat marked as read');
+      // Don't refresh chat list immediately - let the cache expire naturally
+      // This reduces API calls significantly
     } catch (error: any) {
-      // Silently handle network errors
-      if (error?.message?.includes('fetch') || error?.message?.includes('Network')) {
-        return;
-      }
-      console.error('Failed to mark as read:', error);
+      // Silently handle all errors for read status
+      console.log('[ChatRoom] Failed to mark as read (silent):', error?.message);
     }
   };
 
@@ -115,6 +119,7 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
 
   const loadMessages = async () => {
     setIsLoading(true);
+    setLoadError(null);
     try {
       const data = await apiCall(`/chat/${character.id}`);
       
@@ -125,9 +130,14 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
       } else {
         setMessages(data.messages);
       }
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-      setMessages([]);
+    } catch (error: any) {
+      console.error('[ChatRoom] Failed to load messages:', error);
+      setLoadError(error);
+      // Don't clear messages - keep existing ones if available
+      if (messages.length === 0) {
+        // Only set empty if there were no messages before
+        setMessages([]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -393,6 +403,15 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
           <div className="flex justify-center items-center h-full">
             <p className="text-gray-500">대화를 불러오는 중...</p>
           </div>
+        ) : loadError ? (
+          <ErrorFallback 
+            error={loadError}
+            onRetry={loadMessages}
+            title="대화 내역을 불러올 수 없습니다"
+            description={loadError.message?.includes('Too many requests') 
+              ? '현재 많은 사용자가 접속하여 서버가 바쁩니다. 1-2분 후에 다시 시도해주세요.' 
+              : '일시적인 문제로 대화 내역을 불러오지 못했습니다. 다시 시도해주세요.'}
+          />
         ) : messages.length === 0 ? (
           <div className="flex justify-center items-center h-full">
             <p className="text-gray-500">대화를 시작해보세요!</p>

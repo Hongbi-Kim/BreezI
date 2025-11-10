@@ -11,17 +11,23 @@ export async function logUserAction(
   feature: string,
   metadata?: Record<string, any>
 ): Promise<void> {
-  try {
-    await apiCall('/logs/action', {
-      method: 'POST',
-      body: JSON.stringify({
-        action,
-        feature,
-        metadata: metadata || {}
-      })
-    });
-  } catch (error) {
-    // Silently fail - logging should not interrupt user experience
-    console.log('Failed to log user action:', error);
-  }
+  // Temporarily disabled to reduce API load and prevent 429 errors
+  // This should be re-enabled with proper rate limiting or batching
+  console.log('[Analytics] User action:', { action, feature, metadata });
+  return;
+  
+  // Original implementation (disabled):
+  // try {
+  //   await apiCall('/logs/action', {
+  //     method: 'POST',
+  //     body: JSON.stringify({
+  //       action,
+  //       feature,
+  //       metadata: metadata || {}
+  //     })
+  //   });
+  // } catch (error) {
+  //   // Silently fail - logging should not interrupt user experience
+  //   console.log('Failed to log user action:', error);
+  // }
 }
