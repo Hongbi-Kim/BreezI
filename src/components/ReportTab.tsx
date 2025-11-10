@@ -47,10 +47,13 @@ export function ReportTab() {
   const [monthData, setMonthData] = useState<EmotionData | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month'>('week');
   const [selectedDiary, setSelectedDiary] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     console.log('[ReportTab] 🟢 Component MOUNTED');
     
+    setIsLoading(true);
     loadReports().then((data) => {
       if (data) {
         setWeekData(data.week);
@@ -58,6 +61,8 @@ export function ReportTab() {
       }
     }).catch((error) => {
       console.error('[ReportTab] Failed to load reports:', error);
+    }).finally(() => {
+      setIsLoading(false);
     });
     
     return () => {
@@ -69,6 +74,7 @@ export function ReportTab() {
 
   const handleRefresh = async () => {
     try {
+      setIsRefreshing(true);
       const data = await refreshReports();
       if (data) {
         setWeekData(data.week);
@@ -76,6 +82,8 @@ export function ReportTab() {
       }
     } catch (error) {
       console.error('Failed to refresh reports:', error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -169,10 +177,10 @@ export function ReportTab() {
           onClick={handleRefresh} 
           variant="outline" 
           size="sm"
-          disabled={reportData.loading}
+          disabled={isRefreshing}
           className="gap-2"
         >
-          <RefreshCw className={`w-4 h-4 ${reportData.loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           <span className="hidden sm:inline">새로고침</span>
         </Button>
       </div>
@@ -184,7 +192,28 @@ export function ReportTab() {
         </TabsList>
       </Tabs>
 
-      {!currentData || currentData.totalDiaries === 0 ? (
+      {isLoading ? (
+        <div className="space-y-6">
+          {/* Loading skeletons */}
+          <Card>
+            <CardHeader>
+              <div className="h-6 bg-gray-200 rounded w-48 mb-2 animate-pulse"></div>
+              <div className="h-4 bg-gray-200 rounded w-32 animate-pulse"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64 bg-gray-100 rounded animate-pulse"></div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <div className="h-6 bg-gray-200 rounded w-40 mb-2 animate-pulse"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-48 bg-gray-100 rounded animate-pulse"></div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : !currentData || currentData.totalDiaries === 0 ? (
         <Card className="text-center py-12">
           <CardContent>
             <p className="text-gray-600 mb-2">

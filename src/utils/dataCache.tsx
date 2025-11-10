@@ -81,11 +81,9 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       return profileData.data;
     }
 
-    // If already loading, wait for current request
+    // If already loading, return cached data immediately
     if (profileData.loading) {
-      console.log('[DataCache] ⏳ Profile already loading, waiting...');
-      // Wait a bit and return cached data if available
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[DataCache] ⏳ Profile already loading, returning cached data');
       return profileData.data;
     }
 
@@ -124,10 +122,9 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       return chatListData.data;
     }
 
-    // If already loading, wait for current request
+    // If already loading, return cached data immediately
     if (chatListData.loading) {
-      console.log('[DataCache] ⏳ Chat list already loading, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[DataCache] ⏳ Chat list already loading, returning cached data');
       return chatListData.data;
     }
 
@@ -174,8 +171,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     }
 
     if (diariesData.loading) {
-      console.log('[DataCache] Diaries already loading, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[DataCache] Diaries already loading, returning cached data');
       return diariesData.data || [];
     }
 
@@ -216,8 +212,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     }
 
     if (reportData.loading) {
-      console.log('[DataCache] Reports already loading, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[DataCache] Reports already loading, returning cached data');
       return reportData.data;
     }
 
@@ -292,8 +287,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     }
 
     if (rippleDatesData.loading) {
-      console.log('[DataCache] ⏳ Ripple dates already loading, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('[DataCache] ⏳ Ripple dates already loading, returning cached data');
       return rippleDatesData.data || [];
     }
 

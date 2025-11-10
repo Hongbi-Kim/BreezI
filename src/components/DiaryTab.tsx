@@ -56,6 +56,7 @@ export function DiaryTab() {
   const [editingDiaryId, setEditingDiaryId] = useState<string | null>(null);
   const [capsuleRefreshKey, setCapsuleRefreshKey] = useState(0);
   const [currentDate, setCurrentDate] = useState<string>('');
+  const [isLoadingDiaries, setIsLoadingDiaries] = useState(true);
   
   // Wave Loop states
   const [selectedDiaryRippleAnswers, setSelectedDiaryRippleAnswers] = useState<Array<{
@@ -106,12 +107,15 @@ export function DiaryTab() {
     setSelectedDate(initialDate);
 
     // Load diaries from cache
+    setIsLoadingDiaries(true);
     loadDiaries().then((data) => {
       if (data) {
         setDiaries(data);
       }
     }).catch((error) => {
       console.error('[DiaryTab] Failed to load diaries:', error);
+    }).finally(() => {
+      setIsLoadingDiaries(false);
     });
 
     // Load profile for birthday info from cache
@@ -509,18 +513,38 @@ export function DiaryTab() {
           </div>
         </CardHeader>
         <CardContent className="p-3 sm:p-6">
-          {/* Day names */}
-          <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
-            {dayNames.map(day => (
-              <div key={day} className="text-center text-xs sm:text-sm text-gray-600 font-medium">
-                {day}
+          {isLoadingDiaries ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+                {dayNames.map(day => (
+                  <div key={day} className="text-center text-xs sm:text-sm text-gray-600 font-medium">
+                    {day}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          {/* Calendar grid */}
-          <div className="grid grid-cols-7 gap-1 sm:gap-2">
-            {renderCalendar()}
-          </div>
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                {Array.from({ length: 35 }).map((_, i) => (
+                  <div key={i} className="aspect-square bg-gray-100 rounded animate-pulse"></div>
+                ))}
+              </div>
+              <div className="h-24 bg-gray-100 rounded animate-pulse"></div>
+            </div>
+          ) : (
+            <>
+              {/* Day names */}
+              <div className="grid grid-cols-7 gap-1 sm:gap-2 mb-2">
+                {dayNames.map(day => (
+                  <div key={day} className="text-center text-xs sm:text-sm text-gray-600 font-medium">
+                    {day}
+                  </div>
+                ))}
+              </div>
+              {/* Calendar grid */}
+              <div className="grid grid-cols-7 gap-1 sm:gap-2">
+                {renderCalendar()}
+              </div>
+            </>
+          )}
 
           {/* Emotion Wave */}
           <div className="mt-4 sm:mt-6">

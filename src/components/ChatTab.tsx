@@ -47,6 +47,7 @@ export function ChatTab() {
   const [fromList, setFromList] = useState(false);
   const [isPro, setIsPro] = useState(false);
   const [showProDialog, setShowProDialog] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     console.log('[ChatTab] 🟢 Component MOUNTED');
@@ -72,6 +73,7 @@ export function ChatTab() {
 
   useEffect(() => {
     if (viewMode === 'list') {
+      setIsLoading(true);
       // Load from cache or fetch new data
       loadChatList().then((data) => {
         if (data && data.characters) {
@@ -107,6 +109,8 @@ export function ChatTab() {
       }).catch((error: any) => {
         console.error('[ChatTab] Failed to load chat list:', error);
         // Don't clear existing chat list on error
+      }).finally(() => {
+        setIsLoading(false);
       });
     }
     // Only depend on viewMode. loadChatList causes infinite re-renders
@@ -184,7 +188,7 @@ export function ChatTab() {
 
       {/* Chat List */}
       <div className="flex-1 overflow-y-auto">
-        {chatListData.loading ? (
+        {isLoading ? (
           <div className="divide-y">
             {[1, 2, 3].map((i) => (
               <div key={i} className="p-4 flex items-center gap-3">
