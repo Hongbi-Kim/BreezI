@@ -635,21 +635,23 @@ export function AdminTab() {
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="p-6 max-w-6xl mx-auto">
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <p className="text-red-700 text-center">{error}</p>
-            <p className="text-sm text-red-600 text-center mt-2">
-              관리자 권한이 필요합니다 (khb1620@naver.com)
-            </p>
-          </CardContent>
-        </Card>
+      <div className="absolute inset-0 overflow-y-auto">
+        <div className="p-6 max-w-6xl mx-auto min-h-full">
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="pt-6">
+              <p className="text-red-700 text-center">{error}</p>
+              <p className="text-sm text-red-600 text-center mt-2">
+                관리자 권한이 필요합니다 (khb1620@naver.com)
+              </p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
@@ -1876,5 +1878,4 @@ export function AdminTab() {
       </div>
     </div>
   );
-}
 }
