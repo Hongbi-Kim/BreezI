@@ -49,10 +49,13 @@ export default function App() {
         setIsAuthenticated(true);
         // Profile setup check will be done by checkAuth or subsequent calls
       } else if (event === 'SIGNED_OUT') {
+        console.log('[App] User signed out, clearing state');
         setIsAuthenticated(false);
         setNeedsProfileSetup(false);
         setIsAdmin(false);
         setHasEnteredApp(false);
+        // Clear data cache on sign out
+        // Note: clearCache should be called from DataCacheProvider context
       } else if (event === 'TOKEN_REFRESHED' && session) {
         console.log('[App] Token refreshed successfully');
         // Session is automatically updated, no action needed

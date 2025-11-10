@@ -67,18 +67,26 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
 
   // Profile
   const loadProfile = useCallback(async (force = false) => {
+    // Return cached data if valid
     if (!force && isCacheValid(profileData.timestamp) && profileData.data) {
+      console.log('[DataCache] Returning cached profile data');
       return profileData.data;
     }
 
+    // If already loading, wait for current request
     if (profileData.loading) {
+      console.log('[DataCache] Profile already loading, waiting...');
+      // Wait a bit and return cached data if available
+      await new Promise(resolve => setTimeout(resolve, 100));
       return profileData.data;
     }
 
+    console.log('[DataCache] Loading profile data...');
     setProfileData(prev => ({ ...prev, loading: true, error: null }));
 
     try {
       const data = await apiCall('/profile');
+      console.log('[DataCache] Profile data loaded successfully');
       const newData = {
         data,
         timestamp: Date.now(),
@@ -88,21 +96,33 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       setProfileData(newData);
       return data;
     } catch (error: any) {
+      console.error('[DataCache] Failed to load profile:', error);
       setProfileData(prev => ({ ...prev, loading: false, error }));
+      // Return cached data even on error if available
+      if (profileData.data) {
+        console.log('[DataCache] Returning stale profile data due to error');
+        return profileData.data;
+      }
       throw error;
     }
   }, [profileData.timestamp, profileData.loading, profileData.data]);
 
   // Chat List
   const loadChatList = useCallback(async (force = false) => {
+    // Return cached data if valid
     if (!force && isCacheValid(chatListData.timestamp) && chatListData.data) {
+      console.log('[DataCache] Returning cached chat list data');
       return chatListData.data;
     }
 
+    // If already loading, wait for current request
     if (chatListData.loading) {
+      console.log('[DataCache] Chat list already loading, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 100));
       return chatListData.data;
     }
 
+    console.log('[DataCache] Loading chat list data...');
     setChatListData(prev => ({ ...prev, loading: true, error: null }));
 
     try {
@@ -116,6 +136,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
         summaries: summariesData.summaries || []
       };
 
+      console.log('[DataCache] Chat list data loaded successfully');
       const newData = {
         data: result,
         timestamp: Date.now(),
@@ -125,7 +146,13 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       setChatListData(newData);
       return result;
     } catch (error: any) {
+      console.error('[DataCache] Failed to load chat list:', error);
       setChatListData(prev => ({ ...prev, loading: false, error }));
+      // Return cached data even on error if available
+      if (chatListData.data) {
+        console.log('[DataCache] Returning stale chat list data due to error');
+        return chatListData.data;
+      }
       throw error;
     }
   }, [chatListData.timestamp, chatListData.loading, chatListData.data]);
@@ -133,19 +160,24 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   // Diaries
   const loadDiaries = useCallback(async (force = false) => {
     if (!force && isCacheValid(diariesData.timestamp) && diariesData.data) {
+      console.log('[DataCache] Returning cached diaries data');
       return diariesData.data;
     }
 
     if (diariesData.loading) {
+      console.log('[DataCache] Diaries already loading, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 100));
       return diariesData.data || [];
     }
 
+    console.log('[DataCache] Loading diaries data...');
     setDiariesData(prev => ({ ...prev, loading: true, error: null }));
 
     try {
       const data = await apiCall('/diaries');
       const diariesList = data.diaries || [];
 
+      console.log('[DataCache] Diaries data loaded successfully:', diariesList.length, 'entries');
       const newData = {
         data: diariesList,
         timestamp: Date.now(),
@@ -155,21 +187,32 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       setDiariesData(newData);
       return diariesList;
     } catch (error: any) {
+      console.error('[DataCache] Failed to load diaries:', error);
       setDiariesData(prev => ({ ...prev, loading: false, error }));
-      throw error;
+      // Return cached data even on error if available
+      if (diariesData.data && diariesData.data.length > 0) {
+        console.log('[DataCache] Returning stale diaries data due to error');
+        return diariesData.data;
+      }
+      // Return empty array instead of throwing
+      return [];
     }
   }, [diariesData.timestamp, diariesData.loading, diariesData.data]);
 
   // Reports
   const loadReports = useCallback(async (force = false) => {
     if (!force && isCacheValid(reportData.timestamp) && reportData.data) {
+      console.log('[DataCache] Returning cached reports data');
       return reportData.data;
     }
 
     if (reportData.loading) {
+      console.log('[DataCache] Reports already loading, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 100));
       return reportData.data;
     }
 
+    console.log('[DataCache] Loading reports data...');
     setReportData(prev => ({ ...prev, loading: true, error: null }));
 
     try {
@@ -180,6 +223,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
 
       const result = { week, month };
 
+      console.log('[DataCache] Reports data loaded successfully');
       const newData = {
         data: result,
         timestamp: Date.now(),
@@ -189,7 +233,13 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
       setReportData(newData);
       return result;
     } catch (error: any) {
+      console.error('[DataCache] Failed to load reports:', error);
       setReportData(prev => ({ ...prev, loading: false, error }));
+      // Return cached data even on error if available
+      if (reportData.data) {
+        console.log('[DataCache] Returning stale reports data due to error');
+        return reportData.data;
+      }
       throw error;
     }
   }, [reportData.timestamp, reportData.loading, reportData.data]);

@@ -170,19 +170,22 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
     setIsLoading(true);
     try {
       const data = await loadProfile();
-      if (data) {
+      if (data && data.profile) {
+        console.log('[ProfileTab] Profile data loaded:', data.profile.nickname);
         setProfile(data.profile);
         setEmail(data.email);
         
-        if (data.profile) {
-          setNickname(data.profile.nickname);
-          setOriginalNickname(data.profile.nickname);
-          setAiInfo(data.profile.aiInfo || '');
-          setCountryCode(data.profile.countryCode || 'KR');
-        }
+        setNickname(data.profile.nickname || '');
+        setOriginalNickname(data.profile.nickname || '');
+        setAiInfo(data.profile.aiInfo || '');
+        setCountryCode(data.profile.countryCode || 'KR');
+      } else {
+        console.warn('[ProfileTab] No profile data received');
       }
-    } catch (error) {
-      console.error('Failed to load profile:', error);
+    } catch (error: any) {
+      console.error('[ProfileTab] Failed to load profile:', error);
+      // Don't clear existing profile data on error
+      // toast.error('프로필을 불러오는데 실패했습니다');
     } finally {
       setIsLoading(false);
     }

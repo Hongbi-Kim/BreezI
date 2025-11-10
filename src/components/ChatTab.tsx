@@ -66,7 +66,8 @@ export function ChatTab() {
     if (viewMode === 'list') {
       // Load from cache or fetch new data
       loadChatList().then((data) => {
-        if (data) {
+        if (data && data.characters) {
+          console.log('[ChatTab] Chat list loaded:', data.characters.length, 'characters');
           const summaries = data.summaries || [];
           const characters = data.characters || [];
 
@@ -92,9 +93,12 @@ export function ChatTab() {
           });
 
           setChatList(list);
+        } else {
+          console.warn('[ChatTab] No chat list data received');
         }
-      }).catch((error) => {
-        console.error('Failed to load chat list:', error);
+      }).catch((error: any) => {
+        console.error('[ChatTab] Failed to load chat list:', error);
+        // Don't clear existing chat list on error
       });
     }
   }, [viewMode, loadChatList]);
