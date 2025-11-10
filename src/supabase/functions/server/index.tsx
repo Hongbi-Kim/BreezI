@@ -17,17 +17,19 @@ app.use('*', cors());
 
 /**
  * Rate Limiting Middleware
- * - IP 기반 요청 제한: 분당 100회 (충분히 여유있게 설정)
+ * - IP 기반 요청 제한: 분당 300회 (긴급 증가 - useCallback 의존성 문제 해결 전까지)
  * - 관리자(khb1620@naver.com)는 제한 없음
  * - 초과 시 429 Too Many Requests 반환
  * 
- * 설정 근거:
- * - 정상 사용: 초기 로딩 10~15회, 이후 캐시 사용으로 거의 0회
- * - 탭 전환: 캐시 히트로 0~2회
- * - 사용자 10명 동시 접속: 100~150회 → 여유있게 수용 가능
+ * TODO: useCallback 의존성 문제 해결 후 100~150으로 조정 필요
+ * 
+ * 현재 문제:
+ * - DataCache의 useCallback 의존성 때문에 함수가 계속 재생성됨
+ * - 이로 인해 useEffect가 반복 실행되어 불필요한 API 호출 발생
+ * - 근본 해결 전까지 Rate Limit을 높게 설정
  */
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1분 (밀리초)
-const RATE_LIMIT_MAX_REQUESTS = 100; // 분당 최대 요청 수 (20 → 100으로 증가)
+const RATE_LIMIT_MAX_REQUESTS = 300; // 분당 최대 요청 수 (긴급 임시 조치)
 
 async function rateLimitMiddleware(c: any, next: any) {
   try {

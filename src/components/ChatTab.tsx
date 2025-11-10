@@ -66,7 +66,9 @@ export function ChatTab() {
     return () => {
       console.log('[ChatTab] 🔴 Component UNMOUNTED');
     };
-  }, [loadProfile]);
+    // Empty deps - only run on mount. loadProfile causes infinite re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (viewMode === 'list') {
@@ -107,7 +109,9 @@ export function ChatTab() {
         // Don't clear existing chat list on error
       });
     }
-  }, [viewMode, loadChatList]);
+    // Only depend on viewMode. loadChatList causes infinite re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   const handleChatClick = (char: Character) => {
     // Check if character is Pro-only (group chat)
