@@ -108,6 +108,11 @@ export async function apiCall(
     timestamp: new Date().toISOString()
   });
   
+  // Track duplicate /profile calls with stack trace
+  if (endpoint === '/profile' && import.meta.env.DEV) {
+    console.trace(`[DEBUG] /profile call stack:`);
+  }
+  
   try {
     const response = await fetch(url, {
       ...options,

@@ -17,19 +17,18 @@ app.use('*', cors());
 
 /**
  * Rate Limiting Middleware
- * - IP 기반 요청 제한: 분당 300회 (긴급 증가 - useCallback 의존성 문제 해결 전까지)
+ * - TEMPORARILY DISABLED: 일단 비활성화하고 실제 API 호출 패턴 분석
+ * - 로그만 출력하고 실제로는 차단하지 않음
  * - 관리자(khb1620@naver.com)는 제한 없음
- * - 초과 시 429 Too Many Requests 반환
  * 
- * TODO: useCallback 의존성 문제 해결 후 100~150으로 조정 필요
- * 
- * 현재 문제:
- * - DataCache의 useCallback 의존성 때문에 함수가 계속 재생성됨
- * - 이로 인해 useEffect가 반복 실행되어 불필요한 API 호출 발생
- * - 근본 해결 전까지 Rate Limit을 높게 설정
+ * TODO: 
+ * 1. 실제 API 호출 패턴 확인
+ * 2. 적절한 Rate Limit 값 산정
+ * 3. 재활성화
  */
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1분 (밀리초)
-const RATE_LIMIT_MAX_REQUESTS = 300; // 분당 최대 요청 수 (긴급 임시 조치)
+const RATE_LIMIT_MAX_REQUESTS = 999999; // 임시로 거의 무제한 (디버깅용)
+const RATE_LIMIT_ENABLED = false; // 완전히 비활성화
 
 async function rateLimitMiddleware(c: any, next: any) {
   try {
@@ -38,6 +37,8 @@ async function rateLimitMiddleware(c: any, next: any) {
                      c.req.header('x-forwarded-for')?.split(',')[0] || // Proxy
                      c.req.header('x-real-ip') || // Nginx
                      'unknown';
+
+    console.log(`[Rate Limit] Request from IP: ${clientIP}, Path: ${c.req.path}`);
 
     // Check if user is admin (admins have no rate limit)
     const authHeader = c.req.header('Authorization');
@@ -55,17 +56,21 @@ async function rateLimitMiddleware(c: any, next: any) {
     // Get current rate limit data
     let rateLimitData = await kv.get(rateLimitKey) || { requests: [], resetAt: now + RATE_LIMIT_WINDOW };
     
+    console.log(`[Rate Limit] Current requests count BEFORE cleanup: ${rateLimitData.requests.length}`);
+    
     // Clean up old requests (older than 1 minute)
     rateLimitData.requests = rateLimitData.requests.filter((timestamp: number) => 
       now - timestamp < RATE_LIMIT_WINDOW
     );
     
-    // Check if rate limit exceeded
-    if (rateLimitData.requests.length >= RATE_LIMIT_MAX_REQUESTS) {
+    console.log(`[Rate Limit] Current requests count AFTER cleanup: ${rateLimitData.requests.length} / ${RATE_LIMIT_MAX_REQUESTS}`);
+    
+    // Check if rate limit exceeded (only if enabled)
+    if (RATE_LIMIT_ENABLED && rateLimitData.requests.length >= RATE_LIMIT_MAX_REQUESTS) {
       const oldestRequest = rateLimitData.requests[0];
       const retryAfter = Math.ceil((oldestRequest + RATE_LIMIT_WINDOW - now) / 1000);
       
-      console.log(`[Rate Limit] IP ${clientIP} exceeded limit (${rateLimitData.requests.length} requests)`);
+      console.log(`[Rate Limit] ❌ IP ${clientIP} exceeded limit (${rateLimitData.requests.length} requests)`);
       
       return c.json({ 
         error: 'Too many requests. Please try again later.',
@@ -78,6 +83,10 @@ async function rateLimitMiddleware(c: any, next: any) {
         'X-RateLimit-Remaining': '0',
         'X-RateLimit-Reset': String(Math.ceil((rateLimitData.requests[0] + RATE_LIMIT_WINDOW) / 1000))
       });
+    }
+    
+    if (rateLimitData.requests.length >= RATE_LIMIT_MAX_REQUESTS && !RATE_LIMIT_ENABLED) {
+      console.log(`[Rate Limit] ⚠️  WOULD BLOCK (disabled): IP ${clientIP} has ${rateLimitData.requests.length} requests`);
     }
     
     // Add current request timestamp
