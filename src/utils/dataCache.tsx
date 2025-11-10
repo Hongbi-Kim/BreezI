@@ -17,6 +17,10 @@ interface DataCacheContextType {
   chatListData: CacheEntry<any>;
   loadChatList: (force?: boolean) => Promise<any>;
   
+  // Chat messages data (per character)
+  loadChatMessages: (characterId: string, force?: boolean) => Promise<any>;
+  refreshChatMessages: (characterId: string) => Promise<any>;
+  
   // Diaries data
   diariesData: CacheEntry<any[]>;
   loadDiaries: (force?: boolean) => Promise<any[]>;
@@ -67,6 +71,7 @@ function isCacheValid(timestamp: number): boolean {
 export function DataCacheProvider({ children }: { children: ReactNode }) {
   const [profileData, setProfileData] = useState<CacheEntry<any>>(createEmptyCache());
   const [chatListData, setChatListData] = useState<CacheEntry<any>>(createEmptyCache());
+  const [chatMessagesCache, setChatMessagesCache] = useState<Record<string, CacheEntry<any>>>({});
   const [diariesData, setDiariesData] = useState<CacheEntry<any[]>>(createEmptyCache());
   const [reportData, setReportData] = useState<CacheEntry<{ week: any; month: any }>>(createEmptyCache());
   const [aiMemoriesData, setAIMemoriesData] = useState<CacheEntry<any[]>>(createEmptyCache());
@@ -320,10 +325,77 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     }
   }, [rippleDatesData.timestamp, rippleDatesData.loading, rippleDatesData.data]);
 
+  // Chat Messages (per character)
+  const loadChatMessages = useCallback(async (characterId: string, force = false) => {
+    const cached = chatMessagesCache[characterId];
+    
+    // Return cached data if valid
+    if (!force && cached && isCacheValid(cached.timestamp) && cached.data) {
+      const cacheAge = Math.floor((Date.now() - cached.timestamp) / 1000);
+      console.log(`[DataCache] ✅ Returning cached chat messages for ${characterId} (age: ${cacheAge}s)`);
+      return cached.data;
+    }
+
+    // If already loading, return cached data immediately
+    if (cached?.loading) {
+      console.log(`[DataCache] ⏳ Chat messages for ${characterId} already loading, returning cached data`);
+      return cached.data;
+    }
+
+    console.log(`[DataCache] 🔄 Loading chat messages for ${characterId} from API...`);
+    setChatMessagesCache(prev => ({
+      ...prev,
+      [characterId]: { ...createEmptyCache(), loading: true }
+    }));
+
+    try {
+      const data = await apiCall(`/chat/${characterId}`);
+      
+      // Handle empty chat - initialize
+      if (!data.messages || data.messages.length === 0) {
+        console.log(`[DataCache] Initializing chat for ${characterId}`);
+        await apiCall(`/chat/${characterId}/init`, { method: 'POST' });
+        const updatedData = await apiCall(`/chat/${characterId}`);
+        
+        const newCache = {
+          data: updatedData,
+          timestamp: Date.now(),
+          loading: false,
+          error: null,
+        };
+        setChatMessagesCache(prev => ({ ...prev, [characterId]: newCache }));
+        return updatedData;
+      }
+
+      console.log(`[DataCache] Chat messages loaded successfully for ${characterId}`);
+      const newCache = {
+        data,
+        timestamp: Date.now(),
+        loading: false,
+        error: null,
+      };
+      setChatMessagesCache(prev => ({ ...prev, [characterId]: newCache }));
+      return data;
+    } catch (error: any) {
+      console.error(`[DataCache] Failed to load chat messages for ${characterId}:`, error);
+      setChatMessagesCache(prev => ({
+        ...prev,
+        [characterId]: { ...prev[characterId], loading: false, error }
+      }));
+      // Return cached data even on error if available
+      if (cached?.data) {
+        console.log(`[DataCache] Returning stale chat messages for ${characterId} due to error`);
+        return cached.data;
+      }
+      throw error;
+    }
+  }, [chatMessagesCache]);
+
   // Clear all cache
   const clearCache = useCallback(() => {
     setProfileData(createEmptyCache());
     setChatListData(createEmptyCache());
+    setChatMessagesCache({});
     setDiariesData(createEmptyCache());
     setReportData(createEmptyCache());
     setAIMemoriesData(createEmptyCache());
@@ -333,6 +405,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   // Manual refresh methods
   const refreshProfile = useCallback(() => loadProfile(true), [loadProfile]);
   const refreshChatList = useCallback(() => loadChatList(true), [loadChatList]);
+  const refreshChatMessages = useCallback((characterId: string) => loadChatMessages(characterId, true), [loadChatMessages]);
   const refreshDiaries = useCallback(() => loadDiaries(true), [loadDiaries]);
   const refreshReports = useCallback(() => loadReports(true), [loadReports]);
   const refreshAIMemories = useCallback(() => loadAIMemories(true), [loadAIMemories]);
@@ -343,6 +416,8 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     loadProfile,
     chatListData,
     loadChatList,
+    loadChatMessages,
+    refreshChatMessages,
     diariesData,
     loadDiaries,
     reportData,

@@ -78,7 +78,7 @@ interface ChatRoomProps {
 }
 
 export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
-  const { refreshChatList } = useDataCache();
+  const { refreshChatList, loadChatMessages, refreshChatMessages } = useDataCache();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -121,15 +121,10 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const data = await apiCall(`/chat/${character.id}`);
-      
-      if (!data.messages || data.messages.length === 0) {
-        await apiCall(`/chat/${character.id}/init`, { method: 'POST' });
-        const updatedData = await apiCall(`/chat/${character.id}`);
-        setMessages(updatedData.messages || []);
-      } else {
-        setMessages(data.messages);
-      }
+      // Use cached data - much faster!
+      const data = await loadChatMessages(character.id);
+      setMessages(data.messages || []);
+      console.log(`[ChatRoom] Loaded ${data.messages?.length || 0} messages for ${character.name}`);
     } catch (error: any) {
       console.error('[ChatRoom] Failed to load messages:', error);
       setLoadError(error);
@@ -185,6 +180,11 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
         setMessages(prev => [...prev, response.message]);
       }
 
+      // Refresh cache in background (don't wait)
+      refreshChatMessages(character.id).catch(err => 
+        console.log('[ChatRoom] Background cache refresh failed:', err)
+      );
+
       // Mark as read after receiving AI response
       await markAsRead();
     } catch (error) {
@@ -222,8 +222,11 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
       
       if (result.success) {
         setMessages([]);
-        // Refresh chat list cache immediately
-        await refreshChatList();
+        // Refresh both caches immediately
+        await Promise.all([
+          refreshChatList(),
+          refreshChatMessages(character.id)
+        ]);
         toast.success('대화 내역이 삭제되었습니다.');
       }
     } catch (error: any) {
@@ -400,8 +403,10 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
       {/* Messages */}
       <div className="flex-1 bg-blue-50 overflow-y-auto">
         {isLoading ? (
-          <div className="flex justify-center items-center h-full">
-            <p className="text-gray-500">대화를 불러오는 중...</p>
+          <div className="flex flex-col justify-center items-center h-full gap-3 p-4">
+            <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
+            <p className="text-gray-600 font-medium">대화를 불러오는 중...</p>
+            <p className="text-sm text-gray-500">{character.name}와의 대화 내역을 가져오고 있어요</p>
           </div>
         ) : loadError ? (
           <ErrorFallback 
