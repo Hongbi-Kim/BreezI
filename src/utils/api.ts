@@ -121,6 +121,24 @@ export async function apiCall(
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: 'Network error' }));
       
+      // Check for rate limit error (429)
+      if (response.status === 429) {
+        const rateLimitInfo = {
+          limit: response.headers.get('X-RateLimit-Limit'),
+          remaining: response.headers.get('X-RateLimit-Remaining'),
+          reset: response.headers.get('X-RateLimit-Reset'),
+          retryAfter: response.headers.get('Retry-After')
+        };
+        
+        console.error('🚫 Rate Limit Exceeded:', {
+          endpoint,
+          limit: `${rateLimitInfo.limit} requests per minute`,
+          remaining: rateLimitInfo.remaining,
+          resetAt: rateLimitInfo.reset ? new Date(parseInt(rateLimitInfo.reset) * 1000).toLocaleTimeString() : 'unknown',
+          retryAfterSeconds: rateLimitInfo.retryAfter
+        });
+      }
+      
       // 개발 환경에서 에러 로그
       if (import.meta.env.DEV) {
         console.error('❌ API Error:', {

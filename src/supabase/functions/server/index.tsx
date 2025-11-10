@@ -17,12 +17,17 @@ app.use('*', cors());
 
 /**
  * Rate Limiting Middleware
- * - IP 기반 요청 제한: 분당 20회
+ * - IP 기반 요청 제한: 분당 100회 (충분히 여유있게 설정)
  * - 관리자(khb1620@naver.com)는 제한 없음
  * - 초과 시 429 Too Many Requests 반환
+ * 
+ * 설정 근거:
+ * - 정상 사용: 초기 로딩 10~15회, 이후 캐시 사용으로 거의 0회
+ * - 탭 전환: 캐시 히트로 0~2회
+ * - 사용자 10명 동시 접속: 100~150회 → 여유있게 수용 가능
  */
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1분 (밀리초)
-const RATE_LIMIT_MAX_REQUESTS = 20; // 분당 최대 요청 수
+const RATE_LIMIT_MAX_REQUESTS = 100; // 분당 최대 요청 수 (20 → 100으로 증가)
 
 async function rateLimitMiddleware(c: any, next: any) {
   try {
