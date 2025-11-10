@@ -1824,10 +1824,10 @@ app.get('/make-server-71735bdc/reports/emotions', async (c) => {
               // Convert UTC time to user's local time
               const localTimeString = date.toLocaleString('en-US', { 
                 timeZone: userTimezone,
-                hour: '2-digit',
+                hour: 'numeric',
                 hour12: false 
               });
-              const localHour = parseInt(localTimeString.split(',')[1]?.trim().split(':')[0] || '0');
+              const localHour = parseInt(localTimeString);
               chatTimes.push(localHour);
             }
           }
