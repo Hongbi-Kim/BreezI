@@ -142,6 +142,20 @@ export async function apiCall(
           resetAt: rateLimitInfo.reset ? new Date(parseInt(rateLimitInfo.reset) * 1000).toLocaleTimeString() : 'unknown',
           retryAfterSeconds: rateLimitInfo.retryAfter
         });
+        
+        // If rate limit headers are missing, it means backend wasn't deployed
+        // Wait and retry once
+        if (!rateLimitInfo.limit && !rateLimitInfo.retryAfter) {
+          const currentRetries = retryAttempts.get(requestKey) || 0;
+          if (currentRetries < MAX_RETRIES) {
+            console.warn('⚠️  Rate limit headers missing - backend not deployed? Retrying in 2s...');
+            retryAttempts.set(requestKey, currentRetries + 1);
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            const result = await apiCall(endpoint, options, useAuth);
+            retryAttempts.delete(requestKey);
+            return result;
+          }
+        }
       }
       
       // 개발 환경에서 에러 로그
