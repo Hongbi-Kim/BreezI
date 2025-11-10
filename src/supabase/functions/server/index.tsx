@@ -17,18 +17,13 @@ app.use('*', cors());
 
 /**
  * Rate Limiting Middleware
- * - TEMPORARILY DISABLED: 일단 비활성화하고 실제 API 호출 패턴 분석
- * - 로그만 출력하고 실제로는 차단하지 않음
+ * - 활성화: IP당 1분에 100 요청 제한
  * - 관리자(khb1620@naver.com)는 제한 없음
- * 
- * TODO: 
- * 1. 실제 API 호출 패턴 확인
- * 2. 적절한 Rate Limit 값 산정
- * 3. 재활성화
+ * - 프론트엔드 캐싱 + 백엔드 Rate Limit로 이중 보호
  */
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1분 (밀리초)
-const RATE_LIMIT_MAX_REQUESTS = 999999; // 임시로 거의 무제한 (디버깅용)
-const RATE_LIMIT_ENABLED = false; // 완전히 비활성화
+const RATE_LIMIT_MAX_REQUESTS = 100; // 1분에 100 요청 (일반적인 사용량: 40-50 요청)
+const RATE_LIMIT_ENABLED = true; // ✅ 활성화
 
 async function rateLimitMiddleware(c: any, next: any) {
   try {

@@ -47,8 +47,9 @@ interface DataCacheContextType {
 
 const DataCacheContext = createContext<DataCacheContextType | undefined>(undefined);
 
-// Cache duration in milliseconds (2 minutes for better performance)
-const CACHE_DURATION = 120000;
+// Cache duration in milliseconds (5 minutes for optimal performance)
+// 프론트엔드 캐싱으로 API 호출 빈도를 줄여 Rate Limit 문제 방지
+const CACHE_DURATION = 300000; // 5 minutes
 
 function createEmptyCache<T>(): CacheEntry<T> {
   return {
