@@ -605,7 +605,8 @@ export function AdminTab() {
 
   if (isLoading) {
     return (
-      <div className="p-3 sm:p-6 pb-24 max-w-6xl mx-auto overflow-y-auto h-full">
+      <div className="absolute inset-0 overflow-y-auto">
+        <div className="p-3 sm:p-6 pb-24 max-w-6xl mx-auto min-h-full">
         <div className="mb-4 sm:mb-6">
           <Skeleton className="h-8 w-48 mb-2" />
           <Skeleton className="h-4 w-64" />
@@ -649,12 +650,14 @@ export function AdminTab() {
             </p>
           </CardContent>
         </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-6xl mx-auto overflow-y-auto h-full">
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="p-3 sm:p-6 pb-24 max-w-6xl mx-auto min-h-full">
       <div className="flex justify-between items-center mb-4 sm:mb-6">
         <div>
           <h2 className="text-xl sm:text-2xl mb-1 sm:mb-2">관리자 대시보드</h2>
@@ -1870,6 +1873,8 @@ export function AdminTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
+}
 }

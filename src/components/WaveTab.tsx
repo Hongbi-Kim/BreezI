@@ -838,12 +838,12 @@ export function WaveTab() {
   };
 
   return (
-    <div className="relative h-full overflow-hidden">
+    <div className="absolute inset-0 overflow-hidden">
       {/* Ocean Background */}
       <OceanWaves />
 
       {/* Content */}
-      <div className="relative z-10 h-full overflow-y-auto p-3 sm:p-6 pb-24">
+      <div className="absolute inset-0 overflow-y-auto p-3 sm:p-6 pb-24">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
           <div className="text-center mb-6">

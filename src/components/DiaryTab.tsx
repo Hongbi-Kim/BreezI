@@ -476,7 +476,8 @@ export function DiaryTab() {
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
   return (
-    <div className="p-3 sm:p-4 pb-24 max-w-4xl mx-auto overflow-y-auto h-full">
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="p-3 sm:p-4 pb-24 max-w-4xl mx-auto min-h-full">
       {/* Header */}
       <div className="flex justify-between items-center mb-4 sm:mb-6">
         <div>
@@ -1032,6 +1033,7 @@ export function DiaryTab() {
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

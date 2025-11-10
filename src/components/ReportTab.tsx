@@ -150,7 +150,8 @@ export function ReportTab() {
   };
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-6xl mx-auto overflow-y-auto h-full">
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="p-3 sm:p-6 pb-24 max-w-6xl mx-auto min-h-full">
       <div className="flex justify-between items-center mb-4 sm:mb-6">
         <div>
           <h2 className="text-xl sm:text-2xl mb-1 sm:mb-2">감정 리포트</h2>
@@ -481,6 +482,7 @@ export function ReportTab() {
           </Card>
         </div>
       )}
+      </div>
     </div>
   );
 }

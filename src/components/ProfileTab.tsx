@@ -368,7 +368,8 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
   }
 
   return (
-    <div className="p-3 sm:p-6 pb-24 max-w-2xl mx-auto overflow-y-auto h-full">
+    <div className="absolute inset-0 overflow-y-auto">
+      <div className="p-3 sm:p-6 pb-24 max-w-2xl mx-auto min-h-full">
       <div className="mb-4 sm:mb-6">
         <h2 className="text-xl sm:text-2xl mb-1 sm:mb-2">프로필</h2>
         <p className="text-gray-600 text-xs sm:text-sm">내 정보를 관리하세요</p>
@@ -1190,6 +1191,7 @@ export function ProfileTab({ onSignOut }: ProfileTabProps) {
         onOpenChange={setShowProCancellationDialog}
         onSuccess={loadProfileData}
       />
+      </div>
     </div>
   );
 }

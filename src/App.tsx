@@ -312,7 +312,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <DataCacheProvider>
-      <div className="h-screen flex flex-col bg-gray-50">
+      <div className="fixed inset-0 flex flex-col bg-gray-50">
         {/* Header */}
         <header className="bg-white border-b flex-shrink-0">
           <div className="px-4 py-2.5 flex items-center justify-between">
@@ -348,8 +348,8 @@ export default function App() {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 overflow-hidden">
-          <div className="h-full">
+        <main className="flex-1 overflow-hidden relative">
+          <div className="absolute inset-0 overflow-hidden">
             {activeTab === 'wave' && <WaveTab />}
             {activeTab === 'chat' && <ChatTab />}
             {activeTab === 'diary' && <DiaryTab />}
