@@ -44,7 +44,7 @@ const emotions = [
 ];
 
 export function DiaryTab() {
-  const { diariesData, loadDiaries, refreshDiaries, profileData, loadProfile } = useDataCache();
+  const { diariesData, loadDiaries, refreshDiaries, profileData, loadProfile, loadRippleDates } = useDataCache();
   const [diaries, setDiaries] = useState<Diary[]>([]);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -103,22 +103,28 @@ export function DiaryTab() {
     setCurrentDate(initialDate);
     setSelectedDate(initialDate);
 
-    // Load diaries
+    // Load diaries from cache
     loadDiaries().then((data) => {
       if (data) {
         setDiaries(data);
       }
     }).catch((error) => {
-      console.error('Failed to load diaries:', error);
+      console.error('[DiaryTab] Failed to load diaries:', error);
     });
 
-    // Load profile for birthday info
+    // Load profile for birthday info from cache
     loadProfile().catch((error) => {
-      console.error('Failed to load profile:', error);
+      console.error('[DiaryTab] Failed to load profile:', error);
     });
 
-    // Load Wave Loop dates
-    loadRippleDates();
+    // Load Wave Loop dates from cache
+    loadRippleDates().then((dates) => {
+      if (dates) {
+        setRippleDates(new Set(dates));
+      }
+    }).catch((error) => {
+      console.error('[DiaryTab] Failed to load ripple dates:', error);
+    });
 
     // Check for date change every minute
     const intervalId = setInterval(() => {
@@ -132,18 +138,9 @@ export function DiaryTab() {
     }, 60000); // Check every minute
 
     return () => clearInterval(intervalId);
-  }, [loadDiaries, loadProfile]);
-
-  const loadRippleDates = async () => {
-    try {
-      const data = await apiCall('/time-ripple/all-dates');
-      if (data.dates) {
-        setRippleDates(new Set(data.dates));
-      }
-    } catch (error) {
-      console.error('Failed to load ripple dates:', error);
-    }
-  };
+    // Empty dependency array - only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetForm = () => {
     setSelectedDate(todayDateStr);

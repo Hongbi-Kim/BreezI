@@ -29,6 +29,10 @@ interface DataCacheContextType {
   aiMemoriesData: CacheEntry<any[]>;
   loadAIMemories: (force?: boolean) => Promise<any[]>;
   
+  // Ripple dates data
+  rippleDatesData: CacheEntry<string[]>;
+  loadRippleDates: (force?: boolean) => Promise<string[]>;
+  
   // Clear cache
   clearCache: () => void;
   
@@ -38,6 +42,7 @@ interface DataCacheContextType {
   refreshDiaries: () => Promise<any[]>;
   refreshReports: () => Promise<any>;
   refreshAIMemories: () => Promise<any[]>;
+  refreshRippleDates: () => Promise<string[]>;
 }
 
 const DataCacheContext = createContext<DataCacheContextType | undefined>(undefined);
@@ -64,6 +69,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   const [diariesData, setDiariesData] = useState<CacheEntry<any[]>>(createEmptyCache());
   const [reportData, setReportData] = useState<CacheEntry<{ week: any; month: any }>>(createEmptyCache());
   const [aiMemoriesData, setAIMemoriesData] = useState<CacheEntry<any[]>>(createEmptyCache());
+  const [rippleDatesData, setRippleDatesData] = useState<CacheEntry<string[]>>(createEmptyCache());
 
   // Profile
   const loadProfile = useCallback(async (force = false) => {
@@ -276,6 +282,49 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     }
   }, [aiMemoriesData.timestamp, aiMemoriesData.loading, aiMemoriesData.data]);
 
+  // Ripple Dates
+  const loadRippleDates = useCallback(async (force = false) => {
+    if (!force && isCacheValid(rippleDatesData.timestamp) && rippleDatesData.data) {
+      const cacheAge = Math.floor((Date.now() - rippleDatesData.timestamp) / 1000);
+      console.log(`[DataCache] ✅ Returning cached ripple dates (age: ${cacheAge}s)`);
+      return rippleDatesData.data;
+    }
+
+    if (rippleDatesData.loading) {
+      console.log('[DataCache] ⏳ Ripple dates already loading, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return rippleDatesData.data || [];
+    }
+
+    console.log('[DataCache] 🔄 Loading ripple dates from API...');
+    setRippleDatesData(prev => ({ ...prev, loading: true, error: null }));
+
+    try {
+      const data = await apiCall('/time-ripple/all-dates');
+      const dates = data.dates || [];
+      
+      console.log('[DataCache] Ripple dates loaded successfully:', dates.length, 'dates');
+      const newData = {
+        data: dates,
+        timestamp: Date.now(),
+        loading: false,
+        error: null,
+      };
+      setRippleDatesData(newData);
+      return dates;
+    } catch (error: any) {
+      console.error('[DataCache] Failed to load ripple dates:', error);
+      setRippleDatesData(prev => ({ ...prev, loading: false, error }));
+      // Return cached data even on error if available
+      if (rippleDatesData.data && rippleDatesData.data.length > 0) {
+        console.log('[DataCache] Returning stale ripple dates due to error');
+        return rippleDatesData.data;
+      }
+      // Return empty array instead of throwing
+      return [];
+    }
+  }, [rippleDatesData.timestamp, rippleDatesData.loading, rippleDatesData.data]);
+
   // Clear all cache
   const clearCache = useCallback(() => {
     setProfileData(createEmptyCache());
@@ -283,6 +332,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     setDiariesData(createEmptyCache());
     setReportData(createEmptyCache());
     setAIMemoriesData(createEmptyCache());
+    setRippleDatesData(createEmptyCache());
   }, []);
 
   // Manual refresh methods
@@ -291,6 +341,7 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
   const refreshDiaries = useCallback(() => loadDiaries(true), [loadDiaries]);
   const refreshReports = useCallback(() => loadReports(true), [loadReports]);
   const refreshAIMemories = useCallback(() => loadAIMemories(true), [loadAIMemories]);
+  const refreshRippleDates = useCallback(() => loadRippleDates(true), [loadRippleDates]);
 
   const value: DataCacheContextType = {
     profileData,
@@ -303,12 +354,15 @@ export function DataCacheProvider({ children }: { children: ReactNode }) {
     loadReports,
     aiMemoriesData,
     loadAIMemories,
+    rippleDatesData,
+    loadRippleDates,
     clearCache,
     refreshProfile,
     refreshChatList,
     refreshDiaries,
     refreshReports,
     refreshAIMemories,
+    refreshRippleDates,
   };
 
   return (

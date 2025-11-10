@@ -55,9 +55,11 @@ export function ReportTab() {
         setMonthData(data.month);
       }
     }).catch((error) => {
-      console.error('Failed to load reports:', error);
+      console.error('[ReportTab] Failed to load reports:', error);
     });
-  }, [loadReports]);
+    // Empty dependency array - only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleRefresh = async () => {
     try {
