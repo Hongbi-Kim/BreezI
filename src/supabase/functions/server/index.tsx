@@ -1807,6 +1807,12 @@ app.get('/make-server-71735bdc/reports/emotions', async (c) => {
     const allChats = await kv.get(`chat:${user.id}`) || {};
     const chatTimes: number[] = [];
     
+    // Get user's timezone from profile (default: Asia/Seoul)
+    const profiles = await kv.get('profiles') || {};
+    const userProfile = profiles[user.id] || {};
+    const userTimezone = userProfile.timezone || 'Asia/Seoul';
+    console.log(`[Reports] Using timezone: ${userTimezone} for user ${user.id}`);
+    
     Object.values(allChats).forEach((chatData: any) => {
       if (chatData.messages && Array.isArray(chatData.messages)) {
         chatData.messages.forEach((msg: any) => {
@@ -1815,7 +1821,14 @@ app.get('/make-server-71735bdc/reports/emotions', async (c) => {
             // Filter by period
             const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
             if ((period === 'week' && diffDays <= 7) || (period === 'month' && diffDays <= 30)) {
-              chatTimes.push(date.getHours());
+              // Convert UTC time to user's local time
+              const localTimeString = date.toLocaleString('en-US', { 
+                timeZone: userTimezone,
+                hour: '2-digit',
+                hour12: false 
+              });
+              const localHour = parseInt(localTimeString.split(',')[1]?.trim().split(':')[0] || '0');
+              chatTimes.push(localHour);
             }
           }
         });
