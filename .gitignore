@@ -30,3 +30,6 @@ yarn-error.log*
 # Misc
 .cache/
 .temp/
+__pycache__/
+*.pyc
+venv/

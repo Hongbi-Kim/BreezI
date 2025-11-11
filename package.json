@@ -76,6 +76,8 @@
         "preview": "vite preview",
         "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
         "ai-server": "tsx src/local-backend/ai-server.ts",
-        "dev:all": "concurrently \"npm run dev\" \"npm run ai-server\""
+        "ai-server:py": "python src/local-backend/ai_server.py",
+        "dev:all": "concurrently \"npm run dev\" \"npm run ai-server\"",
+        "dev:all:py": "concurrently \"npm run dev\" \"npm run ai-server:py\""
     }
 }
