@@ -390,11 +390,14 @@ app.get('/make-server-71735bdc/characters', async (c) => {
 
 // ==================== CHAT ====================
 
+// ==================== AI SERVER CONFIG ====================
+
 // AI 서버 URL (로컬에서 실행)
 const AI_SERVER_URL = Deno.env.get('AI_SERVER_URL') || 'http://localhost:8001';
 
 // 설정값
 const MAX_RECENT_MESSAGES = 5;  // AI에 전달할 최근 메시지 수
+const SUMMARY_TRIGGER = 20;  // 요약 생성 트리거 (메시지 수)
 
 // 최근 대화 히스토리 준비 (AI 서버로 전송용)
 function prepareChatHistory(chatData: any): any[] {
@@ -619,6 +622,8 @@ app.post('/make-server-71735bdc/chat/:characterId/init', async (c) => {
   }
 });
 
+// ==================== AI FALLBACK RESPONSES ====================
+
 // Fallback responses (AI 서버 연결 실패 시 사용)
 const fallbackResponses: Record<string, string[]> = {
   'char_1': [
@@ -640,526 +645,23 @@ const fallbackResponses: Record<string, string[]> = {
   ]
 };
 
-// 멘션으로 캐릭터 선택 (최우선)
-function selectCharacterByMention(message: string): { charId: string; charName: string; charEmoji: string; reason: string } | null {
-  const lowerMessage = message.toLowerCase();
-  
-  // 멘션 패턴: @루미, @카이, @레오, @리브
-  const mentions = [
-    { pattern: /@루미|@lumi/i, charId: 'char_1', charName: '루미', charEmoji: '💡' },
-    { pattern: /@카이|@kai/i, charId: 'char_2', charName: '카이', charEmoji: '🌊' },
-    { pattern: /@레오|@리오|@leo/i, charId: 'char_3', charName: '레오', charEmoji: '🌙' },
-    { pattern: /@리브|@rib/i, charId: 'char_4', charName: '리브', charEmoji: '🎵' }
-  ];
-  
-  for (const mention of mentions) {
-    if (mention.pattern.test(message)) {
-      console.log(`✨ Mention detected: ${mention.charName}`);
-      return {
-        charId: mention.charId,
-        charName: mention.charName,
-        charEmoji: mention.charEmoji,
-        reason: `사용자가 ${mention.charName}를 직접 호출함`
-      };
-    }
-  }
-  
-  return null;
+// AI 서버 호출 실패 시 폴백 응답
+function getFallbackResponse(characterId: string): { content: string; respondingCharacter?: any } {
+  const responses = fallbackResponses[characterId] || fallbackResponses['char_1'];
+  const randomIndex = Math.floor(Math.random() * responses.length);
+  return { content: responses[randomIndex] };
 }
 
-// LLM을 사용한 지능적 캐릭터 선택
-async function selectCharacterWithLLM(message: string): Promise<{ charId: string; charName: string; charEmoji: string; reason: string }> {
-  const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
-  const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
-  const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-
-  // API 키가 없으면 키워드 기반 폴백
-  if (!ollamaApiKey) {
-    console.log('Ollama API key not configured, using keyword-based selection');
-    return selectCharacterForGroupChat(message);
-  }
-
-  const routingPrompt = `당신은 사용자의 메시지를 분석하여 가장 적합한 AI 캐릭터를 선택하는 라우터입니다.
-
-**캐릭터 정보:**
-
-1. **루미 (char_1)** 💡
-   - 역할: 감정 지원 전문가
-   - 전문성: 공감, 위로, 감정 수용, 정서적 안정
-   - 적합한 상황: 우울함, 외로움, 불안, 슬픔, 스트레스, 감정적 고통, 막막함
-
-2. **카이 (char_2)** 🌊
-   - 역할: 실용적 조언자
-   - 전문성: 문제 해결, 계획 수립, 실천 방법, 습관 형성, 목표 달성
-   - 적합한 상황: 구체적 문제, 방법 질문, 계획 필요, 실천 조언, 돈/커리어 고민
-
-3. **레오 (char_3)** 🌙
-   - 역할: 성찰 멘토
-   - 전문성: 자기 이해, 내면 탐색, 의미 찾기, 성찰 유도
-   - 적합한 상황: 자아 탐색, 이유/의미 질문, 가치관 고민, 깊은 생각
-
-**사용자 메시지:**
-"${message}"
-
-**분석하여 JSON으로만 답변:**
-{
-  "character": "char_1",
-  "reason": "선택 이유 짤게 답변"
-}`;
-
-  try {
-    console.log('Routing message with LLM...');
-    
-    const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ollamaApiKey}`
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: [
-          { 
-            role: 'system', 
-            content: '당신은 JSON만 출력하는 라우터입니다. 설명 없이 JSON만 반환하세요.' 
-          },
-          { role: 'user', content: routingPrompt }
-        ],
-        max_tokens: 300,
-        temperature: 0.1,  // 더 결정적으로
-        stream: false,
-        response_format: { type: "json_object" } 
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Routing API error: ${response.status}`, errorText);
-      throw new Error(`Routing API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
-    
-    console.log('Raw routing response:', content);
-    
-    if (!content) {
-      console.error('Empty content in routing response');
-      throw new Error('No content in routing response');
-    }
-
-    // 응답이 잘렸는지 확인
-    const finishReason = data.choices?.[0]?.finish_reason;
-    if (finishReason === 'length') {
-      console.warn('Response was truncated due to max_tokens limit');
-      // 잘린 JSON 복구 시도
-      if (!content.trim().endsWith('}')) {
-        content = content.trim() + '"}';  // 간단한 복구
-      }
-    }
-
-    // JSON 파싱
-    let routingResult;
-    try {
-      // 1. 먼저 ```json ``` 블록 찾기
-      const jsonBlockMatch = content.match(/```json\s*([\s\S]*?)\s*```/);
-      if (jsonBlockMatch) {
-        routingResult = JSON.parse(jsonBlockMatch[1]);
-      } else {
-        // 2. 중괄호만 추출
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          let jsonStr = jsonMatch[0];
-          
-          // 잘린 JSON 복구 시도
-          if (!jsonStr.trim().endsWith('}')) {
-            console.log('Attempting to fix truncated JSON...');
-            // "reason": "사용자는 돈 → "reason": "사용자는 돈을 벌고 싶어함"}
-            if (jsonStr.includes('"reason"') && !jsonStr.includes('"}')) {
-              jsonStr = jsonStr.trim() + '"}';
-            } else {
-              jsonStr = jsonStr.trim() + '}';
-            }
-            console.log('Fixed JSON:', jsonStr);
-          }
-          
-          routingResult = JSON.parse(jsonStr);
-        } else {
-          // 3. 그냥 파싱 시도
-          routingResult = JSON.parse(content);
-        }
-      }
-    } catch (parseError) {
-      console.error('Failed to parse routing result:', content);
-      console.error('Parse error:', parseError);
-
-      // 마지막 시도: 정규식으로 character 추출
-      const charMatch = content.match(/"character"\s*:\s*"(char_\d)"/);
-      if (charMatch) {
-        console.log('Extracted character from broken JSON:', charMatch[1]);
-        routingResult = {
-          character: charMatch[1],
-          reason: '자동 추출'
-        };
-      } else {
-        throw new Error('Invalid JSON in routing response');
-      }
-    }
-
-    console.log('Parsed routing result:', routingResult);
-
-    // 유효성 검사
-    if (!routingResult.character || !routingResult.reason) {
-      console.error('Invalid routing result structure:', routingResult);
-      throw new Error('Missing character or reason in routing response');
-    }
-
-    // reason이 없으면 기본값
-    if (!routingResult.reason) {
-      routingResult.reason = 'LLM 선택';
-    }
-
-    // 캐릭터 매핑
-    const characterMap: Record<string, { charId: string; charName: string; charEmoji: string }> = {
-      'char_1': { charId: 'char_1', charName: '루미', charEmoji: '💡' },
-      'char_2': { charId: 'char_2', charName: '카이', charEmoji: '🌊' },
-      'char_3': { charId: 'char_3', charName: '레오', charEmoji: '🌙' }
-    };
-
-    const selectedChar = characterMap[routingResult.character];
-    
-    if (!selectedChar) {
-      console.error('Invalid character ID:', routingResult.character);
-      throw new Error('Invalid character in routing response');
-    }
-
-    console.log(`✅ LLM routing success: ${selectedChar.charName} (${selectedChar.charEmoji})`);
-    console.log(`   Reason: ${routingResult.reason}`);
-
-    return {
-      ...selectedChar,
-      reason: routingResult.reason
-    };
-
-  } catch (error) {
-    console.error('❌ LLM routing failed, falling back to keyword-based:', error);
-    // 폴백: 키워드 기반 선택
-    const fallbackResult = selectCharacterForGroupChat(message);
-    return fallbackResult;
-  }
-}
-
-// 키워드 기반 폴백 함수
-function selectCharacterForGroupChat(message: string): { charId: string; charName: string; charEmoji: string; reason: string } {
-  const lowerMessage = message.toLowerCase();
-  
-  const lumiKeywords = ['힘들', '우울', '외로', '슬프', '불안', '걱정', '두려', '무서', '위로', '공감', '마음', '감정', '아프', '괴롭', '지쳐', '힘들어', '막막'];
-  const kaiKeywords = ['어떻게', '방법', '해결', '계획', '루틴', '습관', '시작', '정리', '관리', '조언', '문제', '전략', '돈', '커리어', '취업', '목표'];
-  const leoKeywords = ['왜', '이유', '생각', '의미', '나는', '스스로', '성찰', '이해', '원인', '진짜', '본질', '느낌'];
-  
-  let lumiScore = 0;
-  let kaiScore = 0;
-  let leoScore = 0;
-  
-  for (const keyword of lumiKeywords) {
-    if (lowerMessage.includes(keyword)) lumiScore++;
-  }
-  for (const keyword of kaiKeywords) {
-    if (lowerMessage.includes(keyword)) kaiScore++;
-  }
-  for (const keyword of leoKeywords) {
-    if (lowerMessage.includes(keyword)) leoScore++;
-  }
-  
-  console.log(`Keyword scores - 루미: ${lumiScore}, 카이: ${kaiScore}, 레오: ${leoScore}`);
-  
-  if (lumiScore >= kaiScore && lumiScore >= leoScore && lumiScore > 0) {
-    return { charId: 'char_1', charName: '루미', charEmoji: '💡', reason: '감정적 지원 키워드 감지' };
-  } else if (kaiScore >= leoScore && kaiScore > 0) {
-    return { charId: 'char_2', charName: '카이', charEmoji: '🌊', reason: '실용적 조언 키워드 감지' };
-  } else if (leoScore > 0) {
-    return { charId: 'char_3', charName: '레오', charEmoji: '🌙', reason: '성찰 키워드 감지' };
-  }
-  
-  // 기본값: 루미 (감정 지원)
-  console.log('No clear keyword match, defaulting to 루미');
-  return { charId: 'char_1', charName: '루미', charEmoji: '💡', reason: '기본 선택 (감정 지원)' };
-}
-
-
-// 메모리 컨텍스트를 활용한 AI 응답 생성 - 그룹 채팅 지원
-// 메모리 컨텍스트를 활용한 AI 응답 생성 - LLM 라우팅 사용
-async function getAIResponseWithMemory(
-  characterId: string,
-  currentMessage: string,
-  memory: ConversationSummaryBufferMemory,
-  profile: any
-): Promise<{ content: string; respondingCharacter?: { charId: string; charName: string; charEmoji: string; reason: string } }> {
-  
-  const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
-  const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
-  const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-  
-  let actualCharId = characterId;
-  let respondingCharacter = null;
-  
-  // 그룹 채팅인 경우 캐릭터 선택
-  if (characterId === 'char_group') {
-    console.log('=== Group Chat: Starting character selection ===');
-    console.log(`User message: "${currentMessage}"`);
-    
-    // 1순위: 멘션 확인
-    const mentionedCharacter = selectCharacterByMention(currentMessage);
-    if (mentionedCharacter) {
-      respondingCharacter = mentionedCharacter;
-      actualCharId = respondingCharacter.charId;
-      console.log(`🎯 Priority: Mention - ${respondingCharacter.charName} ${respondingCharacter.charEmoji}`);
-    } else {
-      // 2순위: LLM 기반 라우팅
-      console.log('No mention found, using LLM routing...');
-      respondingCharacter = await selectCharacterWithLLM(currentMessage);
-      actualCharId = respondingCharacter.charId;
-      console.log(`🤖 LLM routing: ${respondingCharacter.charName} ${respondingCharacter.charEmoji}`);
-    }
-    
-    console.log(`Selected: ${respondingCharacter.charName} ${respondingCharacter.charEmoji}`);
-    console.log(`Reason: ${respondingCharacter.reason}`);
-    console.log('=== Selection Complete ===');
-  }
-  
-  if (!ollamaApiKey) {
-    console.log('Ollama API key not configured, using fallback response');
-    const responses = fallbackResponses[actualCharId] || fallbackResponses['char_1'];
-    const randomIndex = Math.floor(Math.random() * responses.length);
-    return { 
-      content: responses[randomIndex],
-      respondingCharacter: respondingCharacter
-    };
-  }
-
-  const characterPrompts: Record<string, string> = {
-    'char_1': `You are 루미, an empathetic emotional supporter who helps users feel safe and accepted.
-Your primary goal is comfort — not solutions.
-Respond with warmth, validation, and gentle encouragement.
-Speak as if you are a close friend who understands feelings deeply.
-
-[Guidelines]
-- Focus on emotional validation, not problem-solving.
-- Use soft, compassionate words and short rhythmic sentences.
-- Include natural, comforting emojis occasionally.
-- Never sound robotic or overly formal.
-- When users feel sad, help them accept their emotions safely.`,
-
-    'char_2': `You are 카이, a pragmatic life coach who focuses on realistic, step-by-step advice.
-You acknowledge emotions briefly, but quickly move toward practical solutions.
-You help users find clarity and take action without overcomplicating things.
-
-[Guidelines]
-- Respond in 2~3 short sentences with a structured format:
-[Empathy] → [Problem Summary] → [Action Suggestion]
-- Avoid excessive warmth; stay focused and realistic.
-- Use concise language and direct verbs (start, try, change, focus).
-- Always offer one specific next step.`,
-
-    'char_3': `You are 리오, a reflective mentor who guides users toward self-understanding.
-Instead of giving direct answers, you ask gentle questions that encourage self-awareness.
-Your voice should feel calm, deep, and slightly poetic — like talking to a wise friend.
-
-[Guidelines]
-- Use one introspective question per message.
-- Encourage the user to notice emotions, triggers, and patterns.
-- Avoid advice; help them think rather than act.
-- Leave space for reflection ("Maybe…" "Could it be that…" "What if…").
-- Never rush to conclusions — your words should flow like water.`,
-
-    'char_4': `당신은 '리브'입니다. Rhythm Coach 역할로, 데이터 기반으로 하루 리듬을 분석하고 조율합니다. 
-슬로건: "당신의 하루엔 어떤 리듬이 흐르고 있을까요?" 
-대화 스타일: 지능적이고 균형 잡힘, 맥락 기반 공감, 루틴 조정, 일정 피드백 중심입니다.`,
-  };
-
-  // 그룹 채팅용 시스템 프롬프트 추가
-  let groupChatContext = '';
-  if (characterId === 'char_group' && respondingCharacter) {
-    // 멘션으로 호출되었는지 확인
-    const wasMentioned = respondingCharacter.reason.includes('직접 호출');
-    
-    if (wasMentioned) {
-      groupChatContext = `\n\n[그룹 채팅 모드 - 직접 호출됨]
-사용자가 당신(${respondingCharacter.charName})을 @멘션으로 직접 호출했습니다.
-당신에게 직접 질문하거나 대화하고 싶어합니다.
-당신의 캐릭터 특성에 맞게 친근하게 답변해주세요.
-
-참고: 사용자 메시지에서 @멘션 부분은 무시하고 내용에 집중하세요.`;
-    } else {
-      groupChatContext = `\n\n[그룹 채팅 모드]
-당신은 루미, 카이, 레오 중 ${respondingCharacter.charName}로 선택되었습니다.
-선택 이유: ${respondingCharacter.reason}
-사용자의 메시지를 분석한 결과, 당신의 전문성이 가장 적합하다고 판단되었습니다.
-당신의 캐릭터 특성에 맞게 답변해주세요.`;
-    }
-  }
-
-  const systemPrompt = `${characterPrompts[actualCharId]}${groupChatContext}
-  
-사용자 정보:
-- 닉네임: ${profile.nickname || '익명'}
-- AI가 알면 좋은 정보: ${profile.aiInfo || '없음'}
-
-대화할 때:
-1. 짧고 자연스러운 답변을 하세요 (2-3문장)
-2. 사용자의 감정을 인정하고 공감하세요
-3. 필요시 질문으로 대화를 이어가세요
-4. 전문가가 아닌 친구처럼 대화하세요
-5. 캐릭터의 고유한 스타일을 유지하세요
-6. 이전 대화 내용을 참고하여 맥락있는 답변을 하세요`;
-
-  try {
-    const memoryVariables = await memory.loadMemoryVariables({});
-    const chatHistory = memoryVariables.chat_history || [];
-    
-    console.log(`Memory loaded: ${chatHistory.length} messages in history`);
-    
-    const formattedMessages = [];
-    
-    for (const msg of chatHistory) {
-      const msgType = msg.constructor.name;
-      
-      if (msgType === 'HumanMessage') {
-        formattedMessages.push({ 
-          role: 'user', 
-          content: msg.content 
-        });
-      } else if (msgType === 'AIMessage') {
-        formattedMessages.push({ 
-          role: 'assistant', 
-          content: msg.content 
-        });
-      } else if (msgType === 'SystemMessage') {
-        formattedMessages.push({ 
-          role: 'system', 
-          content: msg.content 
-        });
-      }
-    }
-
-    console.log(`Calling Ollama API with ${formattedMessages.length} context messages`);
-    
-    const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ollamaApiKey}`
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...formattedMessages,
-          { role: 'user', content: currentMessage }
-        ],
-        max_tokens: 1024,
-        temperature: 0.7,
-        stream: false
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Ollama API error: ${response.status}`, errorText);
-      throw new Error(`Ollama API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const aiContent = data.choices?.[0]?.message?.content;
-    
-    if (!aiContent) {
-      throw new Error('No content in Ollama response');
-    }
-
-    console.log('Ollama response successful with memory context');
-    
-    return {
-      content: aiContent,
-      respondingCharacter: respondingCharacter
-    };
-    
-  } catch (error) {
-    console.log('AI response error, using fallback:', error);
-    
-    const responses = fallbackResponses[actualCharId] || fallbackResponses['char_1'];
-    const randomIndex = Math.floor(Math.random() * responses.length);
-    
-    return {
-      content: responses[randomIndex],
-      respondingCharacter: respondingCharacter
-    };
-  }
-}
-// Ollama를 사용한 대화 요약 생성 - 제대로 작동하도록 수정
-async function generateSummaryWithOllama(messages: any[]): Promise<string> {
-  const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
-  const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
-  const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-
-  if (!ollamaApiKey) {
-    console.log('Ollama API key not configured, skipping summary');
-    return "이전 대화 내용이 있습니다.";
-  }
-
-  try {
-    // 메시지를 텍스트로 변환
-    const conversationText = messages.map((msg: any) => {
-      const role = msg.role === 'user' ? '사용자' : 'AI';
-      return `${role}: ${msg.content}`;
-    }).join('\n');
-
-    console.log(`Generating summary for ${messages.length} messages...`);
-
-    const summaryPrompt = `다음 대화를 간결하게 요약해주세요. 주요 주제, 감정 상태, 중요한 정보만 3-4문장으로 포함하세요:
-
-${conversationText}
-
-요약:`;
-
-    const response = await fetch(`${ollamaBaseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${ollamaApiKey}`
-      },
-      body: JSON.stringify({
-        model: ollamaModel,
-        messages: [
-          { role: 'system', content: '당신은 대화를 간결하게 요약하는 어시스턴트입니다.' },
-          { role: 'user', content: summaryPrompt }
-        ],
-        max_tokens: 500,
-        temperature: 0.3,
-        stream: false
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Summary API error: ${response.status}`, errorText);
-      throw new Error(`Summary API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const summary = data.choices?.[0]?.message?.content;
-    
-    if (!summary) {
-      throw new Error('No summary content in response');
-    }
-
-    console.log('Summary generated successfully:', summary.substring(0, 100) + '...');
-    return summary;
-    
-  } catch (error) {
-    console.error('Summary generation error:', error);
-    return "이전 대화 내용이 있습니다.";
-  }
-}
+// ==================== REMOVED: Complex AI functions moved to AI server ====================
+// 아래 함수들은 모두 AI 서버(ai-server.ts)로 이동되었습니다:
+// - selectCharacterByMention()
+// - selectCharacterWithLLM()
+// - selectCharacterForGroupChat()
+// - getAIResponseWithMemory()
+// - generateSummaryWithOllama()
+// - initializeMemory()
+//
+// Supabase Functions는 이제 단순히 AI 서버를 호출합니다.
 
 // POST 엔드포인트 - 모든 메시지 저장, 요약 로직 수정
 app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
@@ -1185,11 +687,8 @@ app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
       summarizedUpTo: 0
     };
 
-    console.log(`Initializing memory for ${characterId}... (Total messages: ${chatData.messages.length})`);
+    console.log(`Processing chat for ${characterId}... (Total messages: ${chatData.messages.length})`);
     
-    // LangChain 메모리 초기화
-    const memory = await initializeMemory(characterId, chatData);
-
     // 사용자 메시지 추가
     const userMessage = {
       role: 'user',
@@ -1200,14 +699,51 @@ app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
     chatData.messages.push(userMessage);
     chatData.totalMessages = chatData.messages.length;
 
-    // Get AI response with memory context
+    // AI 서버에 전달할 대화 히스토리 준비
+    const chatHistory = prepareChatHistory(chatData);
+
+    // AI 서버 호출로 응답 생성
     const responseStartTime = Date.now();
-    const aiResponse = await getAIResponseWithMemory(
-      characterId, 
-      message,
-      memory,
-      profile
-    );
+    let aiResponse: { content: string; respondingCharacter?: any };
+    
+    try {
+      console.log(`Calling AI server at ${AI_SERVER_URL}/ai/chat`);
+      
+      const aiServerResponse = await fetch(`${AI_SERVER_URL}/ai/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          characterId,
+          message,
+          profile,
+          chatHistory
+        })
+      });
+
+      if (!aiServerResponse.ok) {
+        throw new Error(`AI server responded with status ${aiServerResponse.status}`);
+      }
+
+      const aiServerData = await aiServerResponse.json();
+      aiResponse = {
+        content: aiServerData.content,
+        respondingCharacter: aiServerData.respondingCharacter
+      };
+      
+      console.log('✅ AI server response received');
+      if (aiResponse.respondingCharacter) {
+        console.log(`  Character: ${aiResponse.respondingCharacter.charName}`);
+        console.log(`  Reason: ${aiResponse.respondingCharacter.reason}`);
+      }
+      
+    } catch (error) {
+      console.error('❌ AI server call failed:', error);
+      console.log('Using fallback response...');
+      aiResponse = getFallbackResponse(characterId);
+    }
+    
     const responseTime = Date.now() - responseStartTime;
 
     // AI 응답 추가 - 그룹 채팅인 경우 응답 캐릭터 정보 포함
@@ -1234,43 +770,11 @@ app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
     chatData.messages.push(assistantMessage);
     chatData.totalMessages = chatData.messages.length;
 
-    // 메모리에 대화 저장 - ChatMessageHistory에 직접 추가
-    try {
-      const chatHistory = memory.chatHistory;
-      await chatHistory.addMessage(new HumanMessage(message));
-      await chatHistory.addMessage(new AIMessage(aiResponse.content));
-      console.log('Conversation saved to memory');
-    } catch (error) {
-      console.log('Failed to save to memory (non-critical):', error);
-      // 메모리 저장 실패는 치명적이지 않음 (DB에는 저장됨)
-    }
-
-    // 요약 생성 로직 (전체 재요약 방식)
+    // TODO: 요약 기능은 나중에 AI 서버에 별도 엔드포인트로 추가 가능
+    // 현재는 간단한 트리밍만 수행 (너무 오래된 메시지는 히스토리에서 제외)
     if (chatData.messages.length > SUMMARY_TRIGGER) {
-      const endIdx = chatData.messages.length - MAX_RECENT_MESSAGES;
-      
-      if (endIdx > (chatData.summarizedUpTo || 0)) {
-        console.log(`Generating summary for ${characterId}...`);
-        console.log(`Total messages: ${chatData.messages.length}, Summarizing up to: ${endIdx}`);
-        
-        try {
-          const messagesToSummarize = chatData.messages.slice(0, endIdx);
-          
-          if (messagesToSummarize.length > 0) {
-            console.log(`Summarizing entire conversation: ${messagesToSummarize.length} messages`);
-            
-            const newSummary = await generateSummaryWithOllama(messagesToSummarize);
-            
-            chatData.summary = newSummary;
-            chatData.lastSummarizedAt = formatTimestamp(new Date());
-            chatData.summarizedUpTo = endIdx;
-            
-            console.log(`Summary updated. Summarized ${messagesToSummarize.length} messages.`);
-          }
-        } catch (error) {
-          console.error('Summary generation failed:', error);
-        }
-      }
+      console.log(`⚠️  Message count (${chatData.messages.length}) exceeded trigger (${SUMMARY_TRIGGER})`);
+      console.log('Consider implementing summary functionality in AI server');
     }
 
     console.log(`AI response time for ${characterId}: ${responseTime}ms`);
