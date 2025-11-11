@@ -75,9 +75,10 @@
         "build": "vite build",
         "preview": "vite preview",
         "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+        "supabase": "cd src/supabase/functions/server && deno run --allow-all index.tsx",
         "ai-server": "tsx src/local-backend/ai-server.ts",
         "ai-server:py": "python src/local-backend/ai_server.py",
-        "dev:all": "concurrently \"npm run dev\" \"npm run ai-server\"",
-        "dev:all:py": "concurrently \"npm run dev\" \"npm run ai-server:py\""
+        "dev:all": "concurrently \"npm run dev\" \"npm run supabase\" \"npm run ai-server\"",
+        "dev:all:py": "concurrently \"npm run dev\" \"npm run supabase\" \"npm run ai-server:py\""
     }
 }
