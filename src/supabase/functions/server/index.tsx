@@ -390,82 +390,38 @@ app.get('/make-server-71735bdc/characters', async (c) => {
 
 // ==================== CHAT ====================
 
-import { ChatOllama } from "@langchain/community/chat_models/ollama";
-import { ConversationSummaryBufferMemory } from "langchain/memory";
-import { ChatMessageHistory } from "langchain/stores/message/in_memory";
-import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+// AI 서버 URL (로컬에서 실행)
+const AI_SERVER_URL = Deno.env.get('AI_SERVER_URL') || 'http://localhost:8001';
 
 // 설정값
-const MAX_RECENT_MESSAGES = 5;  // LLM에 전달할 최근 메시지 수
-const SUMMARY_TRIGGER = 5;      // 이 개수가 넘으면 요약 생성
-const MAX_TOKENS_FOR_SUMMARY = 2000;
+const MAX_RECENT_MESSAGES = 5;  // AI에 전달할 최근 메시지 수
 
-// Ollama LLM 초기화
-function createOllamaLLM() {
-  const ollamaBaseUrl = Deno.env.get('OLLAMA_BASE_URL') || 'https://api.ollama.ai/v1';
-  const ollamaModel = Deno.env.get('OLLAMA_MODEL') || 'gpt-oss:120b-cloud';
-  const ollamaApiKey = Deno.env.get('OLLAMA_API_KEY');
-
-  return new ChatOllama({
-    baseUrl: ollamaBaseUrl,
-    model: ollamaModel,
-    temperature: 0.3,
-    apiKey: ollamaApiKey,
-  });
-}
-
-// LangChain 메모리 초기화 함수 - 그룹 채팅 지원
-async function initializeMemory(characterId: string, chatData: any) {
-  const llm = createOllamaLLM();
-
-  // ChatMessageHistory 생성
-  const messageHistory = new ChatMessageHistory();
-
-  // 기존 요약이 있으면 SystemMessage로 추가
+// 최근 대화 히스토리 준비 (AI 서버로 전송용)
+function prepareChatHistory(chatData: any): any[] {
+  const chatHistory: any[] = [];
+  
+  // 기존 요약이 있으면 시스템 메시지로 추가
   if (chatData?.summary) {
-    try {
-      await messageHistory.addMessage(
-        new SystemMessage(`이전 대화 요약: ${chatData.summary}`)
-      );
-      console.log('Loaded conversation summary into memory');
-    } catch (error) {
-      console.log('Failed to load summary:', error);
-    }
+    chatHistory.push({
+      role: 'system',
+      content: `이전 대화 요약: ${chatData.summary}`
+    });
   }
-
-  // 최근 메시지들만 메모리에 로드
+  
+  // 최근 메시지들만 포함
   if (chatData?.messages && chatData.messages.length > 0) {
     const recentMessages = chatData.messages.slice(-MAX_RECENT_MESSAGES);
     
-    try {
-      for (const msg of recentMessages) {
-        if (msg.role === 'user') {
-          await messageHistory.addMessage(new HumanMessage(msg.content));
-        } else if (msg.role === 'assistant') {
-          // 그룹 채팅인 경우 어떤 캐릭터가 답변했는지 포함
-          let content = msg.content;
-          if (characterId === 'char_group' && msg.respondingCharacter) {
-            content = `[${msg.respondingCharacter.charName}] ${msg.content}`;
-          }
-          await messageHistory.addMessage(new AIMessage(content));
-        }
+    for (const msg of recentMessages) {
+      if (msg.role === 'user') {
+        chatHistory.push({ role: 'user', content: msg.content });
+      } else if (msg.role === 'assistant') {
+        chatHistory.push({ role: 'assistant', content: msg.content });
       }
-      console.log(`Loaded ${recentMessages.length} recent messages into memory (total: ${chatData.messages.length})`);
-    } catch (error) {
-      console.log('Failed to load messages into memory:', error);
     }
   }
-
-  // ConversationSummaryBufferMemory 생성
-  const memory = new ConversationSummaryBufferMemory({
-    llm: llm,
-    chatHistory: messageHistory,
-    maxTokenLimit: MAX_TOKENS_FOR_SUMMARY,
-    returnMessages: true,
-    memoryKey: "chat_history"
-  });
-
-  return memory;
+  
+  return chatHistory;
 }
 
 
@@ -663,26 +619,24 @@ app.post('/make-server-71735bdc/chat/:characterId/init', async (c) => {
   }
 });
 
-// Fallback responses
+// Fallback responses (AI 서버 연결 실패 시 사용)
 const fallbackResponses: Record<string, string[]> = {
   'char_1': [
     '그 마음 이해해. 힘들 때는 언제든지 이야기해줘.',
     '오늘 하루도 고생 많았어. 네 마음이 조금이나마 편안해지면 좋겠어.',
-    '그런 일이 있었구나. 네 감정을 솔직하게 표현해줘서 고마워.',
   ],
   'char_2': [
     '그 문제는 이렇게 접근해보면 어떨까요?',
-    '차근차근 정리해볼까요? 우선순위부터 생각해봐요.',
+    '차근차근 정리해볼까요?',
   ],
   'char_3': [
     '왜 그렇게 느꼈을까요? 함께 생각해봐요.',
-    '그 순간, 진짜 마음은 어땠나요?',
   ],
   'char_4': [
     '오늘 일정이 많았네요. 내일은 좀 더 여유를 만들어볼까요?',
   ],
   'char_group': [
-    '편하게 이야기해보세요. 적절한 답변을 드릴게요.',
+    '편하게 이야기해보세요.',
   ]
 };
 
