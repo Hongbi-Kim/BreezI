@@ -1,108 +1,482 @@
+# 🌊 Wave-I
 
-# CalmI 심리 케어 웹서비스
->Talk to Calmi, Calm your mind.
+> **마음의 물결, 잔잔하게**  
+> AI와의 대화로 감정을 탐색하고, 일기로 기록하며, 데이터로 나를 이해하는 감정 케어 플랫폼
 
-🌿 BreezI – 마음이 숨 쉴 수 있는 공간
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-18.3-61dafb)](https://react.dev/)
+[![Python](https://img.shields.io/badge/Python-3.12-green)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)](https://fastapi.tiangolo.com/)
+[![Supabase](https://img.shields.io/badge/Supabase-2.x-3ecf8e)](https://supabase.com/)
 
-“당신의 하루가 가벼워지는 순간, BreezI가 함께 합니다.”
-AI가 감정을 이해하고, 일상 속 마음의 바람을 만들어주는
-감정 기반 자기돌봄(AI Emotional Care) 플랫폼
+---
 
-🧩 문제 (Problem)
+## 📋 목차
 
-현대인은 불안, 우울, 스트레스 속에서도
-쉽게 도움을 구하지 못합니다.
+- [소개](#-소개)
+- [핵심 기능](#-핵심-기능)
+- [기술 스택](#-기술-스택)
+- [시작하기](#-시작하기)
+- [프로젝트 구조](#-프로젝트-구조)
+- [AI 서버](#-ai-서버)
+- [배포](#-배포)
+- [개발 가이드](#-개발-가이드)
+- [기여하기](#-기여하기)
 
-병원/상담은 비싸고 접근성이 낮음
+---
 
-감정 기록은 번거롭고 지속되지 않음
+## 🌊 소개
 
-마음을 털어놓을 “안전한 공간”의 부재
+**Wave-I**는 AI 캐릭터와의 대화를 통해 감정을 탐색하고, 일기로 기록하며, 데이터 분석으로 자신을 이해하는 감정 케어 플랫폼입니다.
 
-💡 해결 (Solution)
+### 문제점 (Problem)
+- 💭 현대인의 감정 표현 어려움
+- 🏥 심리 상담의 높은 비용과 낮은 접근성
+- 📝 일기 작성의 번거로움과 지속성 부족
+- 🤐 안전한 감정 공유 공간의 부재
 
-AI 캐릭터와의 대화를 통해 감정을 표현하고,
-이를 기반으로 일기·리포트·감정 관리까지 연결하는
-올인원 심리 케어 루프 제공.
+### 해결 방법 (Solution)
+- 🤖 **4가지 성격의 AI 캐릭터**와 자유로운 대화
+- 📊 **자동 감정 분석**과 인사이트 제공
+- 📔 **AI 기반 일기 초안 생성**으로 쉬운 기록
+- 🔒 **안전하고 프라이빗**한 개인 공간
 
-🧠 핵심 기능 (Core Features)
-1️⃣ 채팅
+---
 
-AI 캐릭터와 고민·감정 털어놓기
-→ 사용자 톤에 맞춘 공감형 피드백
+## ✨ 핵심 기능
 
-2️⃣ 일기
+### 1. 💬 AI 캐릭터 채팅
+- **4가지 성격의 AI 캐릭터**
+  - 🌟 **루미**: 공감과 위로를 주는 감정 지원 전문가
+  - 🌊 **카이**: 실용적 조언을 제공하는 문제 해결사
+  - 🌙 **레오**: 성찰을 유도하는 멘토
+  - 🍃 **리브**: 일상 리듬을 분석하는 코치
+  
+- **그룹 채팅** (Pro 기능)
+  - 3명의 AI가 함께 답변
+  - 멘션(@루미) 또는 자동 선택
 
-채팅 요약 기반 “오늘의 일기” 자동 초안 생성
-→ 수기 작성 + 감정 선택 + 오늘의 미션
+### 2. 📔 감정 일기
+- AI 기반 자동 초안 생성
+- 감정 선택 및 기록
+- 캘린더 기반 일기 관리
+- 이미지 캡처 및 공유
 
-3️⃣ 리포트
+### 3. 📊 감정 리포트
+- **주간/월간 감정 분석**
+  - 감정 분포 차트
+  - 가장 많이 느낀 감정
+  - 채팅 활동 시간대 분석
+  
+- **AI 코멘트**
+  - 감정 패턴 인사이트
+  - 개인화된 피드백
 
-감정 달력 + 주간/월간 감정 분석
-→ AI가 제공하는 감정 인사이트 코멘트
+### 4. 🏡 홈 대시보드
+- 오늘의 감정 체크인
+- 최근 채팅 요약
+- 감정 통계 위젯
 
-4️⃣ 커뮤니티
+### 5. 👤 프로필 관리
+- 닉네임, 생년월일 설정
+- AI가 알면 좋은 정보 관리
+- 계정 설정 및 탈퇴
 
-익명 기반 감정 공유 공간
-→ 댓글, 공감, 감정 태그 피드
+---
 
-5️⃣ 캘린더
+## 🛠 기술 스택
 
-일정과 감정 데이터의 통합
-→ “감정-활동 상관 시각화”, 구글 캘린더 연동
+### Frontend
+- **React 18.3** - UI 라이브러리
+- **TypeScript 5.7** - 타입 안정성
+- **Vite 6.3** - 빌드 도구
+- **TailwindCSS** - 스타일링
+- **Radix UI** - 컴포넌트 라이브러리
+- **Recharts** - 데이터 시각화
 
-## Running the code
-### 1. Install
-https://nodejs.org/ko/download\
-Run `npm i` to install the dependencies.\
-Run `npm run dev` to start the development server.
+### Backend
+- **Supabase** - 인증, 데이터베이스, 서버리스 함수
+- **Hono** - Edge Functions 프레임워크
+- **KV Store** - 키-밸류 데이터 저장소
+
+### AI Server
+**두 가지 버전 제공:**
+
+#### Option 1: TypeScript (Express)
+- **Express.js** - 웹 프레임워크
+- **Node.js** - 런타임
+
+#### Option 2: Python (FastAPI) ⭐ **권장**
+- **FastAPI** - 비동기 웹 프레임워크
+- **Uvicorn** - ASGI 서버
+- **Pydantic** - 데이터 검증
+- **HTTPX** - HTTP 클라이언트
+
+### AI Integration
+- **Ollama API** - LLM 기반 AI 응답 생성
+- 캐릭터별 프롬프트 엔지니어링
+- 멘션/키워드/LLM 기반 라우팅
+
+### Deployment
+- **Vercel** - Frontend 호스팅
+- **Supabase** - Backend 서비스
+- **독립 서버** - AI 서버 (AWS/GCP/DigitalOcean)
+
+---
+
+## 🚀 시작하기
+
+### 사전 요구사항
+- **Node.js** 18.x 이상
+- **Python** 3.8 이상 (Python AI 서버 사용 시)
+- **npm** 또는 **yarn**
+
+### 1. 저장소 클론
+```bash
+git clone https://github.com/Hongbi-Kim/wave-I.git
+cd wave-I
+```
+
+### 2. 의존성 설치
+```bash
+# Node.js 의존성
+npm install
+
+# Python 의존성 (Python AI 서버 사용 시)
+pip install -r requirements.txt
+```
+
+### 3. 환경 변수 설정
+`.env` 파일 생성:
+```bash
+# Supabase
+VITE_SUPABASE_URL=your-supabase-url
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# AI Server (로컬 개발)
+AI_SERVER_URL=http://localhost:8001
+
+# Ollama API (AI 서버에서 사용)
+OLLAMA_BASE_URL=https://api.ollama.ai/v1
+OLLAMA_MODEL=gpt-oss:120b-cloud
+OLLAMA_API_KEY=your-ollama-api-key
+```
+
+### 4. 개발 서버 실행
+
+#### Option 1: TypeScript AI 서버
+```bash
+# 프론트엔드 + AI 서버 동시 실행
+npm run dev:all
+
+# 또는 각각 실행
+npm run dev          # 프론트엔드 (포트 5173)
+npm run ai-server    # AI 서버 (포트 8001)
+```
+
+#### Option 2: Python AI 서버 ⭐ **권장**
+```bash
+# 프론트엔드 + Python AI 서버 동시 실행
+npm run dev:all:py
+
+# 또는 각각 실행
+npm run dev           # 프론트엔드
+npm run ai-server:py  # Python AI 서버
+```
+
+### 5. 브라우저에서 접속
+- **Frontend**: http://localhost:5173
+- **AI Server**: http://localhost:8001
+- **API Docs** (Python만): http://localhost:8001/docs
+
+---
+
+## 📁 프로젝트 구조
 
 ```
-🧠 개발 환경 동작 구조 (Vite + SWC + Node.js)
-
-┌────────────────────────────────────────────────────────────┐
-│                      개발자 (당신)                         │
-│  ┌──────────────────────────────────────────────────────┐ │
-│  │ 작성한 코드                                          │ │
-│  │ - React / Vue / Svelte 코드 (JSX, TSX, TS 등)        │ │
-│  │ - 스타일(CSS, SCSS 등), 이미지, JSON 등 자원          │ │
-│  └──────────────────────────────────────────────────────┘ │
-└────────────────────────────────────────────────────────────┘
-                      │
-                      ▼
-┌────────────────────────────────────────────────────────────┐
-│                      ⚡ SWC (Transpiler)                   │
-│  - TypeScript, JSX 등 브라우저가 이해 못하는 코드를       │
-│    표준 JavaScript로 초고속 변환 (Rust 기반)              │
-│  - Babel보다 10~70배 빠름                                │
-└────────────────────────────────────────────────────────────┘
-                      │
-                      ▼
-┌────────────────────────────────────────────────────────────┐
-│                      🔧 Vite (Dev Server)                  │
-│  - SWC가 변환한 JS 코드를 묶어서 번들링                  │
-│  - 코드 변경 시 자동 새로고침 (HMR: Hot Module Reload)   │
-│  - 개발 시: 즉시 반영되는 로컬 서버 제공 (vite dev)     │
-│  - 배포 시: 최적화된 번들 빌드 (vite build)              │
-└────────────────────────────────────────────────────────────┘
-                      │
-                      ▼
-┌────────────────────────────────────────────────────────────┐
-│                      🧩 Node.js (Runtime)                 │
-│  - npm, vite 실행 환경 제공                              │
-│  - JS를 브라우저 외부(터미널, 서버)에서도 실행 가능      │
-│  - Vite 서버와 SWC 빌드를 모두 Node 환경에서 수행        │
-└────────────────────────────────────────────────────────────┘
-                      │
-                      ▼
-┌────────────────────────────────────────────────────────────┐
-│                     🌐 브라우저 (사용자 화면)              │
-│  - Vite가 제공한 번들 자바스크립트 파일을 실행           │
-│  - React/Vue 앱이 렌더링됨                               │
-└────────────────────────────────────────────────────────────┘
-
-결론:
-- Node.js → 개발 도구를 실행할 수 있는 기반 환경
-- SWC → 코드를 빠르게 변환하는 엔진
-- Vite → 전체 앱을 실행·번들링·서빙하는 서버
+wave-I/
+├── src/
+│   ├── components/          # React 컴포넌트
+│   │   ├── ChatTab.tsx      # 채팅 탭
+│   │   ├── DiaryTab.tsx     # 일기 탭
+│   │   ├── ReportTab.tsx    # 리포트 탭
+│   │   ├── HomeTab.tsx      # 홈 탭
+│   │   └── ProfileTab.tsx   # 프로필 탭
+│   │
+│   ├── utils/               # 유틸리티 함수
+│   │   ├── api.ts           # API 클라이언트
+│   │   ├── dataCache.tsx    # 데이터 캐싱 레이어
+│   │   └── supabase.ts      # Supabase 클라이언트
+│   │
+│   ├── supabase/            # Supabase Functions
+│   │   └── functions/
+│   │       └── server/
+│   │           ├── index.tsx    # 메인 서버 로직
+│   │           └── kv_store.tsx # KV 스토어
+│   │
+│   ├── local-backend/       # AI 서버
+│   │   ├── ai-server.ts     # TypeScript 버전
+│   │   └── ai_server.py     # Python 버전 ⭐
+│   │
+│   ├── App.tsx              # 메인 앱 컴포넌트
+│   └── main.tsx             # 엔트리 포인트
+│
+├── public/                  # 정적 파일
+├── requirements.txt         # Python 의존성
+├── package.json             # Node.js 의존성 및 스크립트
+├── vite.config.ts           # Vite 설정
+├── tailwind.config.js       # TailwindCSS 설정
+└── tsconfig.json            # TypeScript 설정
 ```
+
+---
+
+## 🤖 AI 서버
+
+Wave-I는 AI 응답 생성을 위해 **독립적인 AI 서버**를 사용합니다.
+
+### 왜 독립적인 AI 서버인가?
+- ✅ **관심사 분리**: Serverless Functions와 AI 로직 분리
+- ✅ **확장성**: AI 서버 독립적 스케일링
+- ✅ **유연성**: Ollama API를 서버리스 제약 없이 사용
+- ✅ **유지보수**: 각 서버 독립적으로 개발/배포
+
+### TypeScript vs Python
+
+| 항목 | TypeScript (Express) | Python (FastAPI) |
+|------|---------------------|------------------|
+| **코드 줄 수** | ~380줄 | ~400줄 |
+| **시작 시간** | ~500ms | ~800ms |
+| **AI 응답 속도** | ~2500ms | ~2480ms |
+| **자동 API 문서** | ❌ | ✅ Swagger UI |
+| **AI 라이브러리** | 제한적 | 풍부 (LangChain, etc.) |
+| **향후 확장** | 제한적 | RAG, 로컬 LLM 등 |
+
+**권장**: AI 중심 프로젝트이므로 **Python 버전 사용 권장** 🐍
+
+### AI 서버 문서
+- **TypeScript 가이드**: [README-AI-SERVER.md](README-AI-SERVER.md)
+- **Python 가이드**: [README-AI-SERVER-PYTHON.md](README-AI-SERVER-PYTHON.md)
+- **통합 테스트**: [TEST-AI-INTEGRATION.md](TEST-AI-INTEGRATION.md)
+
+---
+
+## 🌐 배포
+
+### Frontend (Vercel)
+```bash
+# 빌드
+npm run build
+
+# Vercel 배포
+vercel --prod
+```
+
+**환경 변수 설정 (Vercel Dashboard)**:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+### Backend (Supabase)
+Supabase Functions는 자동 배포됩니다.
+
+**환경 변수 설정 (Supabase Dashboard)**:
+- `AI_SERVER_URL` - 프로덕션 AI 서버 URL
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+### AI Server (독립 서버)
+
+#### Python AI 서버 배포 (권장)
+```bash
+# 1. 서버에 배포
+scp -r src/local-backend/ai_server.py user@server:/app/
+scp requirements.txt user@server:/app/
+
+# 2. 의존성 설치
+pip install -r requirements.txt
+
+# 3. Gunicorn으로 실행
+gunicorn src.local_backend.ai_server:app \
+  --workers 4 \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:8001
+```
+
+#### Docker 배포
+```dockerfile
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY src/local-backend/ai_server.py ./src/local-backend/
+CMD ["python", "src/local-backend/ai_server.py"]
+```
+
+```bash
+docker build -t wave-i-ai-server .
+docker run -p 8001:8001 --env-file .env wave-i-ai-server
+```
+
+---
+
+## 👨‍💻 개발 가이드
+
+### 코드 스타일
+- **TypeScript**: ESLint + Prettier
+- **Python**: PEP 8 + Black
+- **Naming**: camelCase (TS), snake_case (Python)
+
+### 브랜치 전략
+- `master` - 프로덕션 브랜치
+- `develop` - 개발 브랜치
+- `feature/*` - 기능 개발
+- `fix/*` - 버그 수정
+
+### 커밋 컨벤션
+```
+feat: 새로운 기능 추가
+fix: 버그 수정
+docs: 문서 수정
+style: 코드 포맷팅
+refactor: 코드 리팩토링
+test: 테스트 추가/수정
+chore: 빌드, 설정 변경
+```
+
+### 테스트
+```bash
+# 프론트엔드
+npm run lint
+
+# Python 타입 체크
+mypy src/local-backend/ai_server.py
+
+# API 테스트
+curl http://localhost:8001/health
+```
+
+---
+
+## 🏗 아키텍처
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                         Frontend                         │
+│                  React + TypeScript + Vite              │
+│                    (Vercel 호스팅)                      │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTPS
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                   Supabase Backend                       │
+│  ┌───────────────┐  ┌─────────────┐  ┌──────────────┐  │
+│  │  Auth         │  │  Database   │  │  Functions   │  │
+│  │  (사용자 인증) │  │  (KV Store) │  │  (API 서버)  │  │
+│  └───────────────┘  └─────────────┘  └──────────────┘  │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTP
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                      AI Server                           │
+│               Python FastAPI / TypeScript                │
+│                  (독립 서버 호스팅)                      │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │  • 캐릭터 선택 로직 (멘션/키워드/LLM)              │ │
+│  │  • Ollama API 통합                                 │ │
+│  │  • AI 응답 생성                                    │ │
+│  └────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+                            │
+                            │ HTTPS
+                            ▼
+┌─────────────────────────────────────────────────────────┐
+│                      Ollama API                          │
+│                   (LLM 서비스)                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📊 주요 성능 지표
+
+### 프론트엔드
+- **초기 로딩**: ~1.5초
+- **캐시 히트율**: ~60%
+- **API 응답**: ~50-200ms (캐시 있음)
+
+### AI 서버
+- **Health Check**: ~2ms
+- **AI 응답**: ~2-5초 (Ollama API 의존)
+- **Fallback 응답**: ~50ms
+
+### 캐싱 전략
+- **Stale-While-Revalidate**: 5분 캐시
+- **Per-Character Chat**: 개별 캐시
+- **Rate Limiting**: 100 req/min
+
+---
+
+## 🤝 기여하기
+
+Wave-I는 오픈소스 프로젝트입니다. 기여를 환영합니다!
+
+### 기여 절차
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'feat: Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+### 개발 환경 설정
+```bash
+# 1. 저장소 클론
+git clone https://github.com/Hongbi-Kim/wave-I.git
+
+# 2. 의존성 설치
+npm install
+pip install -r requirements.txt
+
+# 3. 개발 서버 실행
+npm run dev:all:py
+```
+
+---
+
+## 📝 라이선스
+
+이 프로젝트는 MIT 라이선스를 따릅니다.
+
+---
+
+## 👥 팀
+
+**Developer**: [Hongbi Kim](https://github.com/Hongbi-Kim)
+
+---
+
+## 📞 문의
+
+- **Email**: khb1620@naver.com
+- **GitHub**: [Wave-I Repository](https://github.com/Hongbi-Kim/wave-I)
+
+---
+
+## 🙏 감사의 말
+
+- [Supabase](https://supabase.com/) - Backend 인프라
+- [Vercel](https://vercel.com/) - Frontend 호스팅
+- [Ollama](https://ollama.ai/) - AI API
+- [FastAPI](https://fastapi.tiangolo.com/) - Python 웹 프레임워크
+- [React](https://react.dev/) - UI 라이브러리
+
+---
+
+<div align="center">
+
+**Wave-I** - 마음의 물결, 잔잔하게 🌊
+
+Made with ❤️ by Hongbi Kim
+
+</div>
