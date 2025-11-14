@@ -4,6 +4,28 @@ const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = import.meta.env.VITE_GOOGLE_REDIRECT_URI || `${window.location.origin}/auth/callback`;
 
+// Get API Base URL (same logic as api.ts)
+function getApiBase(): string {
+  const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+  
+  // 1. Explicit environment variable
+  if (import.meta.env.VITE_API_URL) {
+    const url = import.meta.env.VITE_API_URL;
+    if (url.includes('/make-server-71735bdc')) {
+      return url;
+    }
+    return `${url.replace(/\/$/, '')}/make-server-71735bdc`;
+  }
+  
+  // 2. Development mode
+  if (import.meta.env.DEV) {
+    return 'http://localhost:8000/make-server-71735bdc';
+  }
+  
+  // 3. Production mode
+  return `https://${projectId}.supabase.co/functions/v1/make-server-71735bdc`;
+}
+
 // Google Calendar API scopes
 const CALENDAR_SCOPES = [
   'https://www.googleapis.com/auth/calendar.readonly',
@@ -63,16 +85,29 @@ export function getGoogleAuthUrl(): string {
  */
 export async function initiateGoogleCalendarAuth(): Promise<void> {
   try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session?.access_token) {
+      throw new Error('User not logged in');
+    }
+
+    // API Base URL 가져오기
+    const API_BASE = getApiBase();
+    
     // 백엔드 API를 호출하여 OAuth URL 가져오기
-    const response = await fetch('/make-server-71735bdc/calendar/auth/url', {
+    const response = await fetch(`${API_BASE}/calendar/auth/url`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${await getAccessToken()}`,
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
       },
     });
 
     if (!response.ok) {
-      throw new Error('Failed to get OAuth URL');
+      const errorText = await response.text();
+      console.error('OAuth URL fetch failed:', response.status, errorText);
+      throw new Error(`Failed to get OAuth URL: ${response.status}`);
     }
 
     const { authUrl } = await response.json();
@@ -108,13 +143,6 @@ export async function initiateGoogleCalendarAuth(): Promise<void> {
     console.error('Failed to initiate Google Calendar auth:', error);
     throw error;
   }
-}
-
-// Access Token 가져오기 helper
-async function getAccessToken(): Promise<string> {
-  const supabase = createClient();
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token || '';
 }
 
 /**
