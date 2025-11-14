@@ -36,3 +36,7 @@ venv/
 
 # Deno
 deno.lock
+
+# Supabase credentials (contains secret keys)
+src/utils/supabase/info.tsx
+**/supabase/info.tsx
