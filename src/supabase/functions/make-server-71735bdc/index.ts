@@ -7,8 +7,13 @@ import * as kv from './kv_store.tsx';
 
 const app = new Hono();
 
-// .env 파일 로드 (맨 위에서 실행)
-await load({ export: true });
+// .env 파일 로드 (선택사항 - 파일이 없어도 괜찮음)
+try {
+  await load({ export: true });
+  console.log('✅ .env file loaded');
+} catch (error) {
+  console.log('ℹ️ No .env file found, using system environment variables');
+}
 
 app.use('*', logger(console.log));
 app.use('*', cors());
