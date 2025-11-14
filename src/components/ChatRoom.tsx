@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Send, Calendar, ArrowLeft, User as UserIcon, Trash2 } from 'lucide-react';
+import { Send, Calendar, ArrowLeft, User as UserIcon, Trash2, Check, X } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +17,12 @@ import { apiCall } from '../utils/api';
 import { useDataCache } from '../utils/dataCache';
 import { toast } from 'sonner';
 import { ErrorFallback } from './ErrorFallback';
+import { 
+  initiateGoogleCalendarAuth, 
+  getCalendarAuthState,
+  clearCalendarTokens,
+  CalendarAuthState 
+} from '../utils/googleCalendar';
 import lumiAvatar from '../assets/bb838f8b452a418707049fd37137f29785a32e3b.png';
 import kaiAvatar from '../assets/fd812fd1d4483c3de83fd3b6669e7dbb28ec2697.png';
 import leoAvatar from '../assets/247a0132ddfa67d748af8ab8f8273ee53080b2f7.png';
@@ -85,6 +91,11 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
   const [isSending, setIsSending] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadError, setLoadError] = useState<Error | null>(null);
+  const [calendarAuthState, setCalendarAuthState] = useState<CalendarAuthState>({
+    isConnected: false,
+    hasValidToken: false,
+  });
+  const [isCheckingCalendarAuth, setIsCheckingCalendarAuth] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -93,6 +104,11 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
     const markReadTimeout = setTimeout(() => {
       markAsRead();
     }, 500);
+    
+    // Check calendar auth state if character has calendar
+    if (character.hasCalendar) {
+      checkCalendarAuthState();
+    }
     
     return () => clearTimeout(markReadTimeout);
   }, [character.id]);
@@ -204,8 +220,76 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
     }
   };
 
-  const connectGoogleCalendar = () => {
-    toast.info('구글 캘린더 연동 기능은 구글 OAuth 설정이 필요합니다. ��로토타입에서는 제한적으로 지원됩니다.');
+  const checkCalendarAuthState = async () => {
+    setIsCheckingCalendarAuth(true);
+    try {
+      const authState = await getCalendarAuthState();
+      setCalendarAuthState(authState);
+      
+      if (authState.isConnected) {
+        console.log('✅ Google Calendar connected:', authState.email);
+      }
+    } catch (error) {
+      console.error('Failed to check calendar auth state:', error);
+    } finally {
+      setIsCheckingCalendarAuth(false);
+    }
+  };
+
+  const connectGoogleCalendar = async () => {
+    if (calendarAuthState.isConnected) {
+      // Already connected, show disconnect option
+      toast.info(
+        `이미 구글 캘린더에 연결되어 있습니다 (${calendarAuthState.email}). 연결을 해제하려면 길게 누르세요.`,
+        {
+          duration: 3000,
+        }
+      );
+      return;
+    }
+
+    try {
+      toast.loading('구글 캘린더 연동 중...', { id: 'calendar-auth' });
+      
+      // Initiate OAuth flow
+      await initiateGoogleCalendarAuth();
+      
+      // OAuth flow will redirect user, so this code won't run until they return
+      toast.success('구글 캘린더 연동이 시작되었습니다.', { id: 'calendar-auth' });
+    } catch (error: any) {
+      console.error('Failed to connect Google Calendar:', error);
+      toast.error(
+        `구글 캘린더 연동에 실패했습니다: ${error.message}`,
+        { id: 'calendar-auth' }
+      );
+    }
+  };
+
+  const disconnectGoogleCalendar = async () => {
+    try {
+      clearCalendarTokens();
+      setCalendarAuthState({
+        isConnected: false,
+        hasValidToken: false,
+      });
+      toast.success('구글 캘린더 연결이 해제되었습니다.');
+    } catch (error: any) {
+      console.error('Failed to disconnect Google Calendar:', error);
+      toast.error(`연결 해제에 실패했습니다: ${error.message}`);
+    }
+  };
+
+  const handleCalendarButtonLongPress = () => {
+    if (calendarAuthState.isConnected) {
+      // Show disconnect confirmation
+      toast.info('연결을 해제하시겠습니까?', {
+        action: {
+          label: '해제',
+          onClick: disconnectGoogleCalendar,
+        },
+        duration: 5000,
+      });
+    }
   };
 
   const handleDeleteChat = async () => {
@@ -367,8 +451,27 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
         </div>
         <div className="flex items-center gap-2">
           {character.hasCalendar && (
-            <Button variant="outline" size="sm" onClick={connectGoogleCalendar}>
-              <Calendar className="w-4 h-4" />
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={connectGoogleCalendar}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                handleCalendarButtonLongPress();
+              }}
+              className={calendarAuthState.isConnected ? 'text-green-600 border-green-600' : ''}
+              disabled={isCheckingCalendarAuth}
+            >
+              {isCheckingCalendarAuth ? (
+                <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+              ) : calendarAuthState.isConnected ? (
+                <>
+                  <Check className="w-4 h-4 mr-1" />
+                  <Calendar className="w-4 h-4" />
+                </>
+              ) : (
+                <Calendar className="w-4 h-4" />
+              )}
             </Button>
           )}
           <AlertDialog>

@@ -47,6 +47,7 @@ class ChatRequest(BaseModel):
     message: str
     profile: Optional[Dict[str, Any]] = {}
     chatHistory: Optional[List[Message]] = []
+    calendarEvents: Optional[List[Dict[str, Any]]] = []
 
 class CharacterInfo(BaseModel):
     charId: str
@@ -322,11 +323,39 @@ async def ai_chat(request: ChatRequest):
             )
         
         # 시스템 프롬프트 생성
+        calendar_context = ""
+        if actual_char_id == 'char_4' and request.calendarEvents:
+            # Format calendar events for Rive character
+            calendar_context = "\n\n📅 **구글 캘린더 일정:**\n"
+            for i, event in enumerate(request.calendarEvents[:10], 1):  # Limit to 10 events
+                summary = event.get('summary', '제목 없음')
+                start = event.get('start', {})
+                start_time = start.get('dateTime') or start.get('date', '시간 미정')
+                
+                # Parse and format time
+                try:
+                    from datetime import datetime
+                    if 'T' in start_time:
+                        dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        formatted_time = dt.strftime('%m월 %d일 %H:%M')
+                    else:
+                        dt = datetime.fromisoformat(start_time)
+                        formatted_time = dt.strftime('%m월 %d일 (종일)')
+                except:
+                    formatted_time = start_time
+                
+                location = event.get('location', '')
+                location_str = f" 📍 {location}" if location else ""
+                
+                calendar_context += f"{i}. {summary} - {formatted_time}{location_str}\n"
+            
+            calendar_context += "\n💡 위 일정을 참고하여 사용자의 하루 리듬을 분석하고, 일정 관리에 대한 피드백을 제공하세요."
+        
         system_prompt = f"""{CHARACTER_PROMPTS.get(actual_char_id, CHARACTER_PROMPTS['char_1'])}
 
 사용자 정보:
 - 닉네임: {request.profile.get('nickname', '익명')}
-- AI가 알면 좋은 정보: {request.profile.get('aiInfo', '없음')}
+- AI가 알면 좋은 정보: {request.profile.get('aiInfo', '없음')}{calendar_context}
 
 대화할 때:
 1. 짧고 자연스러운 답변을 하세요 (2-3문장)

@@ -50,11 +50,16 @@
   - 🌟 **루미**: 공감과 위로를 주는 감정 지원 전문가
   - 🌊 **카이**: 실용적 조언을 제공하는 문제 해결사
   - 🌙 **레오**: 성찰을 유도하는 멘토
-  - 🍃 **리브**: 일상 리듬을 분석하는 코치
+  - 🎵 **리브**: 일상 리듬을 분석하는 코치 (📅 **구글 캘린더 연동**)
   
 - **그룹 채팅** (Pro 기능)
   - 3명의 AI가 함께 답변
   - 멘션(@루미) 또는 자동 선택
+
+- **구글 캘린더 통합** (리브 캐릭터)
+  - 📅 일정 기반 대화 컨텍스트
+  - 🎯 루틴 패턴 분석 및 조정 제안
+  - ⚡ 실시간 일정 참조
 
 ### 2. 📔 감정 일기
 - AI 기반 자동 초안 생성
@@ -160,7 +165,15 @@ AI_SERVER_URL=http://localhost:8001
 OLLAMA_BASE_URL=https://api.ollama.ai/v1
 OLLAMA_MODEL=gpt-oss:120b-cloud
 OLLAMA_API_KEY=your-ollama-api-key
+
+# Google Calendar (선택사항 - 리브 캐릭터 기능)
+VITE_GOOGLE_CLIENT_ID=your-google-client-id
+VITE_GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
 ```
+
+> 📘 **Google Calendar 연동 가이드**: [GOOGLE_CALENDAR_SETUP.md](./GOOGLE_CALENDAR_SETUP.md) 참고
 
 ### 4. 개발 서버 실행
 

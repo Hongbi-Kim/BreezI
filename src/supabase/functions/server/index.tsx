@@ -702,6 +702,91 @@ app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
     // AI 서버에 전달할 대화 히스토리 준비
     const chatHistory = prepareChatHistory(chatData);
 
+    // Rive 캐릭터(char_4)인 경우 구글 캘린더 이벤트 가져오기
+    let calendarEvents: any[] = [];
+    if (characterId === 'char_4' || characterId === 'char_group') {
+      try {
+        // Check if user has calendar connected
+        const { data: { user: userData }, error: userError } = await supabase.auth.admin.getUserById(user.id);
+        
+        if (!userError && userData?.user_metadata?.google_calendar_access_token) {
+          console.log('📅 Fetching calendar events for Rive character...');
+          
+          // Get calendar events (today to 7 days from now)
+          const now = new Date();
+          const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+          
+          // Try to fetch from calendar API directly (faster than going through our endpoint)
+          const accessToken = userData.user_metadata.google_calendar_access_token;
+          const expiresAt = userData.user_metadata.google_calendar_expires_at;
+          
+          let validToken = accessToken;
+          
+          // Check if token expired
+          if (expiresAt && Date.now() >= expiresAt) {
+            const refreshToken = userData.user_metadata.google_calendar_refresh_token;
+            if (refreshToken) {
+              try {
+                const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                  body: new URLSearchParams({
+                    refresh_token: refreshToken,
+                    client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
+                    client_secret: Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
+                    grant_type: 'refresh_token',
+                  }).toString(),
+                });
+                
+                if (refreshResponse.ok) {
+                  const refreshData = await refreshResponse.json();
+                  validToken = refreshData.access_token;
+                  
+                  // Update token in user metadata
+                  await supabase.auth.admin.updateUserById(user.id, {
+                    user_metadata: {
+                      ...userData.user_metadata,
+                      google_calendar_access_token: validToken,
+                      google_calendar_expires_at: Date.now() + refreshData.expires_in * 1000,
+                    }
+                  });
+                }
+              } catch (error) {
+                console.error('Token refresh failed:', error);
+              }
+            }
+          }
+          
+          // Fetch calendar events
+          const params = new URLSearchParams({
+            timeMin: now.toISOString(),
+            timeMax: weekLater.toISOString(),
+            maxResults: '10',
+            singleEvents: 'true',
+            orderBy: 'startTime',
+          });
+          
+          const calendarResponse = await fetch(
+            `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+            {
+              headers: { Authorization: `Bearer ${validToken}` },
+            }
+          );
+          
+          if (calendarResponse.ok) {
+            const calendarData = await calendarResponse.json();
+            calendarEvents = calendarData.items || [];
+            console.log(`✅ Fetched ${calendarEvents.length} calendar events`);
+          } else {
+            console.log('❌ Failed to fetch calendar events:', calendarResponse.status);
+          }
+        }
+      } catch (error) {
+        console.error('Calendar fetch error (non-blocking):', error);
+        // Don't fail the chat request if calendar fetch fails
+      }
+    }
+
     // AI 서버 호출로 응답 생성
     const responseStartTime = Date.now();
     let aiResponse: { content: string; respondingCharacter?: any };
@@ -718,7 +803,8 @@ app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
           characterId,
           message,
           profile,
-          chatHistory
+          chatHistory,
+          calendarEvents
         })
       });
 
@@ -852,6 +938,174 @@ app.delete('/make-server-71735bdc/chat/:characterId', async (c) => {
 
 
 // ==================== DIARY ====================
+
+
+// ==================== GOOGLE CALENDAR INTEGRATION ====================
+
+// Get Google Calendar events for the user
+app.get('/make-server-71735bdc/calendar/events', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      console.log('Unauthorized calendar fetch attempt');
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    // Get query parameters
+    const timeMin = c.req.query('timeMin');
+    const timeMax = c.req.query('timeMax');
+    const maxResults = c.req.query('maxResults') || '10';
+
+    console.log('Fetching calendar events for user:', user.id);
+
+    // Get Google Calendar access token from user metadata
+    const { data: { user: userData }, error: userError } = await supabase.auth.admin.getUserById(user.id);
+    
+    if (userError || !userData) {
+      console.error('Failed to get user data:', userError);
+      return c.json({ error: 'Failed to get user data' }, 500);
+    }
+
+    const accessToken = userData.user_metadata?.google_calendar_access_token;
+    const refreshToken = userData.user_metadata?.google_calendar_refresh_token;
+    const expiresAt = userData.user_metadata?.google_calendar_expires_at;
+
+    if (!accessToken) {
+      console.log('No calendar access token found for user');
+      return c.json({ error: 'Calendar not connected', connected: false }, 200);
+    }
+
+    // Check if token is expired
+    let validToken = accessToken;
+    if (expiresAt && Date.now() >= expiresAt) {
+      console.log('Access token expired, refreshing...');
+      
+      if (!refreshToken) {
+        console.error('No refresh token available');
+        return c.json({ error: 'Token expired and no refresh token', connected: false }, 200);
+      }
+
+      // Refresh the token
+      try {
+        const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            refresh_token: refreshToken,
+            client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
+            client_secret: Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
+            grant_type: 'refresh_token',
+          }).toString(),
+        });
+
+        if (!refreshResponse.ok) {
+          throw new Error('Token refresh failed');
+        }
+
+        const refreshData = await refreshResponse.json();
+        validToken = refreshData.access_token;
+        
+        // Update user metadata with new token
+        const newExpiresAt = Date.now() + refreshData.expires_in * 1000;
+        await supabase.auth.admin.updateUserById(user.id, {
+          user_metadata: {
+            ...userData.user_metadata,
+            google_calendar_access_token: validToken,
+            google_calendar_expires_at: newExpiresAt,
+          }
+        });
+
+        console.log('✅ Token refreshed successfully');
+      } catch (error) {
+        console.error('Failed to refresh token:', error);
+        return c.json({ error: 'Failed to refresh token', connected: false }, 200);
+      }
+    }
+
+    // Fetch calendar events from Google Calendar API
+    const now = new Date();
+    const defaultTimeMin = timeMin || now.toISOString();
+    const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const defaultTimeMax = timeMax || weekLater.toISOString();
+
+    const params = new URLSearchParams({
+      timeMin: defaultTimeMin,
+      timeMax: defaultTimeMax,
+      maxResults: maxResults,
+      singleEvents: 'true',
+      orderBy: 'startTime',
+    });
+
+    const calendarResponse = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
+      {
+        headers: {
+          Authorization: `Bearer ${validToken}`,
+        },
+      }
+    );
+
+    if (!calendarResponse.ok) {
+      const errorData = await calendarResponse.text();
+      console.error('Calendar API error:', calendarResponse.status, errorData);
+      return c.json({ 
+        error: 'Failed to fetch calendar events', 
+        details: errorData,
+        connected: false 
+      }, 500);
+    }
+
+    const calendarData = await calendarResponse.json();
+    const events = calendarData.items || [];
+
+    console.log(`✅ Fetched ${events.length} calendar events`);
+
+    return c.json({ 
+      events,
+      connected: true,
+      count: events.length
+    });
+
+  } catch (error: any) {
+    console.error('Calendar fetch error:', error);
+    return c.json({ error: 'Internal server error', message: error.message }, 500);
+  }
+});
+
+// Get calendar connection status
+app.get('/make-server-71735bdc/calendar/status', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    // Get user metadata
+    const { data: { user: userData }, error: userError } = await supabase.auth.admin.getUserById(user.id);
+    
+    if (userError || !userData) {
+      return c.json({ connected: false }, 200);
+    }
+
+    const accessToken = userData.user_metadata?.google_calendar_access_token;
+    const expiresAt = userData.user_metadata?.google_calendar_expires_at;
+
+    const isConnected = !!accessToken;
+    const hasValidToken = isConnected && (!expiresAt || Date.now() < expiresAt);
+
+    return c.json({ 
+      connected: isConnected,
+      hasValidToken,
+      email: userData.email
+    });
+
+  } catch (error: any) {
+    console.error('Calendar status error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
 
 // Get all diaries for user
 app.get('/make-server-71735bdc/diaries', async (c) => {
