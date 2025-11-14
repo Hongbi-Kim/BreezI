@@ -33,3 +33,6 @@ yarn-error.log*
 __pycache__/
 *.pyc
 venv/
+
+# Deno
+deno.lock
