@@ -326,6 +326,7 @@ async def ai_chat(request: ChatRequest):
         calendar_context = ""
         if actual_char_id == 'char_4' and request.calendarEvents:
             # Format calendar events for Rive character
+            print(f"📅 Including {len(request.calendarEvents)} calendar events in AI context")
             calendar_context = "\n\n📅 **구글 캘린더 일정:**\n"
             for i, event in enumerate(request.calendarEvents[:10], 1):  # Limit to 10 events
                 summary = event.get('summary', '제목 없음')

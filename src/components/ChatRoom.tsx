@@ -109,8 +109,23 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
     if (character.hasCalendar) {
       checkCalendarAuthState();
     }
+
+    // Listen for calendar connection from popup
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'calendar-connected') {
+        console.log('Calendar connection confirmed from popup');
+        toast.success('구글 캘린더 연동이 완료되었습니다!', { id: 'calendar-auth' });
+        // Recheck auth state
+        setTimeout(() => checkCalendarAuthState(), 1000);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
     
-    return () => clearTimeout(markReadTimeout);
+    return () => {
+      clearTimeout(markReadTimeout);
+      window.removeEventListener('message', handleMessage);
+    };
   }, [character.id]);
 
   const markAsRead = async () => {
@@ -238,11 +253,15 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
 
   const connectGoogleCalendar = async () => {
     if (calendarAuthState.isConnected) {
-      // Already connected, show disconnect option
+      // Already connected, show info with action button
       toast.info(
-        `이미 구글 캘린더에 연결되어 있습니다 (${calendarAuthState.email}). 연결을 해제하려면 길게 누르세요.`,
+        `구글 캘린더 연결됨 (${calendarAuthState.email})`,
         {
           duration: 3000,
+          action: {
+            label: '연결 해제',
+            onClick: disconnectGoogleCalendar,
+          },
         }
       );
       return;
@@ -254,8 +273,7 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
       // Initiate OAuth flow
       await initiateGoogleCalendarAuth();
       
-      // OAuth flow will redirect user, so this code won't run until they return
-      toast.success('구글 캘린더 연동이 시작되었습니다.', { id: 'calendar-auth' });
+      // Success message will come from popup callback
     } catch (error: any) {
       console.error('Failed to connect Google Calendar:', error);
       toast.error(
@@ -267,30 +285,30 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
 
   const disconnectGoogleCalendar = async () => {
     try {
-      clearCalendarTokens();
-      setCalendarAuthState({
-        isConnected: false,
-        hasValidToken: false,
+      // Call backend to disconnect
+      const response = await apiCall('/calendar/disconnect', {
+        method: 'POST'
       });
-      toast.success('구글 캘린더 연결이 해제되었습니다.');
+
+      if (response.success) {
+        // Clear local storage
+        clearCalendarTokens();
+        
+        // Update state
+        setCalendarAuthState({
+          isConnected: false,
+          hasValidToken: false,
+        });
+        
+        toast.success('구글 캘린더 연결이 해제되었습니다.');
+      }
     } catch (error: any) {
       console.error('Failed to disconnect Google Calendar:', error);
       toast.error(`연결 해제에 실패했습니다: ${error.message}`);
     }
   };
 
-  const handleCalendarButtonLongPress = () => {
-    if (calendarAuthState.isConnected) {
-      // Show disconnect confirmation
-      toast.info('연결을 해제하시겠습니까?', {
-        action: {
-          label: '해제',
-          onClick: disconnectGoogleCalendar,
-        },
-        duration: 5000,
-      });
-    }
-  };
+
 
   const handleDeleteChat = async () => {
     setIsDeleting(true);
@@ -455,10 +473,6 @@ export function ChatRoom({ character, onBack, onProfileClick }: ChatRoomProps) {
               variant="outline" 
               size="sm" 
               onClick={connectGoogleCalendar}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                handleCalendarButtonLongPress();
-              }}
               className={calendarAuthState.isConnected ? 'text-green-600 border-green-600' : ''}
               disabled={isCheckingCalendarAuth}
             >

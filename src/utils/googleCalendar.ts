@@ -58,37 +58,63 @@ export function getGoogleAuthUrl(): string {
 }
 
 /**
- * Supabase를 통한 Google OAuth 시작
- * (Supabase Auth의 Google Provider 사용)
+ * 백엔드를 통한 Google OAuth 시작
+ * 기존 로그인 세션을 유지하면서 캘린더 권한만 요청
  */
 export async function initiateGoogleCalendarAuth(): Promise<void> {
   try {
-    const supabase = createClient();
-    
-    // Supabase Auth의 Google Provider로 로그인
-    // 추가 스코프를 요청하려면 options 사용
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: CALENDAR_SCOPES.join(' '),
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        }
-      }
+    // 백엔드 API를 호출하여 OAuth URL 가져오기
+    const response = await fetch('/make-server-71735bdc/calendar/auth/url', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${await getAccessToken()}`,
+      },
     });
 
-    if (error) {
-      console.error('Google OAuth error:', error);
-      throw error;
+    if (!response.ok) {
+      throw new Error('Failed to get OAuth URL');
     }
 
-    console.log('Google OAuth initiated successfully');
+    const { authUrl } = await response.json();
+    
+    // 팝업으로 열기
+    const width = 500;
+    const height = 600;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    
+    const popup = window.open(
+      authUrl,
+      'Google Calendar Authorization',
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+    );
+
+    if (!popup) {
+      // 팝업 차단되면 현재 창에서 열기
+      window.location.href = authUrl;
+    } else {
+      // 팝업 닫힘 감지
+      const checkPopup = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkPopup);
+          console.log('OAuth popup closed');
+          // 연결 상태 재확인은 ChatRoom에서 처리
+        }
+      }, 1000);
+    }
+
+    console.log('Google Calendar OAuth initiated');
   } catch (error) {
     console.error('Failed to initiate Google Calendar auth:', error);
     throw error;
   }
+}
+
+// Access Token 가져오기 helper
+async function getAccessToken(): Promise<string> {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || '';
 }
 
 /**

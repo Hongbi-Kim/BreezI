@@ -854,6 +854,233 @@ app.post('/make-server-71735bdc/chat/:characterId', async (c) => {
     }
     
     chatData.messages.push(assistantMessage);
+
+// Get OAuth URL for calendar authorization
+app.get('/make-server-71735bdc/calendar/auth/url', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    // Create state with user ID
+    const state = JSON.stringify({
+      userId: user.id,
+      timestamp: Date.now(),
+    });
+
+    const redirectUri = `${Deno.env.get('APP_URL') || 'http://localhost:5173'}/calendar-callback`;
+
+    const params = new URLSearchParams({
+      client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events.readonly',
+      access_type: 'offline',
+      prompt: 'consent',
+      state: btoa(state),
+    });
+
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+    return c.json({ authUrl });
+
+  } catch (error: any) {
+    console.error('OAuth URL generation error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
+// Handle OAuth callback
+app.get('/make-server-71735bdc/calendar/callback', async (c) => {
+  try {
+    const code = c.req.query('code');
+    const stateParam = c.req.query('state');
+    const error = c.req.query('error');
+
+    // Error from Google
+    if (error) {
+      console.error('OAuth error from Google:', error);
+      return c.html(`
+        <html>
+          <body>
+            <h1>Authorization Failed</h1>
+            <p>Error: ${error}</p>
+            <script>
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    }
+
+    if (!code || !stateParam) {
+      return c.json({ error: 'Missing code or state' }, 400);
+    }
+
+    // Decode state
+    const state = JSON.parse(atob(stateParam));
+    const userId = state.userId;
+
+    if (!userId) {
+      return c.json({ error: 'Invalid state' }, 400);
+    }
+
+    // Exchange code for tokens
+    const redirectUri = `${Deno.env.get('APP_URL') || 'http://localhost:5173'}/calendar-callback`;
+    
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        code,
+        client_id: Deno.env.get('GOOGLE_CLIENT_ID') || '',
+        client_secret: Deno.env.get('GOOGLE_CLIENT_SECRET') || '',
+        redirect_uri: redirectUri,
+        grant_type: 'authorization_code',
+      }).toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      console.error('Token exchange failed:', errorText);
+      return c.html(`
+        <html>
+          <body>
+            <h1>Token Exchange Failed</h1>
+            <p>Failed to exchange authorization code for tokens.</p>
+            <script>
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `);
+    }
+
+    const tokenData = await tokenResponse.json();
+
+    // Store tokens in user metadata
+    const expiresAt = Date.now() + tokenData.expires_in * 1000;
+    
+    await supabase.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        google_calendar_access_token: tokenData.access_token,
+        google_calendar_refresh_token: tokenData.refresh_token,
+        google_calendar_expires_at: expiresAt,
+      }
+    });
+
+    console.log(`✅ Calendar connected for user ${userId}`);
+
+    // Success page with auto-close
+    return c.html(`
+      <html>
+        <head>
+          <style>
+            body {
+              font-family: system-ui, -apple-system, sans-serif;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              height: 100vh;
+              margin: 0;
+              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            .container {
+              background: white;
+              padding: 3rem;
+              border-radius: 1rem;
+              box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+              text-align: center;
+            }
+            .success-icon {
+              font-size: 4rem;
+              margin-bottom: 1rem;
+            }
+            h1 {
+              color: #333;
+              margin: 0 0 1rem 0;
+            }
+            p {
+              color: #666;
+              margin: 0;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="success-icon">✅</div>
+            <h1>Calendar Connected!</h1>
+            <p>구글 캘린더 연동이 완료되었습니다.</p>
+            <p>이 창은 자동으로 닫힙니다...</p>
+          </div>
+          <script>
+            // Notify parent window
+            if (window.opener) {
+              window.opener.postMessage({ type: 'calendar-connected' }, '*');
+            }
+            // Auto close after 2 seconds
+            setTimeout(() => {
+              window.close();
+            }, 2000);
+          </script>
+        </body>
+      </html>
+    `);
+
+  } catch (error: any) {
+    console.error('Calendar callback error:', error);
+    return c.html(`
+      <html>
+        <body>
+          <h1>Connection Failed</h1>
+          <p>Error: ${error.message}</p>
+          <script>
+            setTimeout(() => window.close(), 3000);
+          </script>
+        </body>
+      </html>
+    `);
+  }
+});
+
+// Disconnect calendar
+app.post('/make-server-71735bdc/calendar/disconnect', async (c) => {
+  try {
+    const user = await getUserFromToken(c.req.header('Authorization'));
+    if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    // Remove calendar tokens from user metadata
+    const { data: { user: userData }, error: userError } = await supabase.auth.admin.getUserById(user.id);
+    
+    if (userError || !userData) {
+      return c.json({ error: 'User not found' }, 404);
+    }
+
+    // Remove calendar-related metadata
+    const updatedMetadata = { ...userData.user_metadata };
+    delete updatedMetadata.google_calendar_access_token;
+    delete updatedMetadata.google_calendar_refresh_token;
+    delete updatedMetadata.google_calendar_expires_at;
+
+    await supabase.auth.admin.updateUserById(user.id, {
+      user_metadata: updatedMetadata
+    });
+
+    console.log(`✅ Calendar disconnected for user ${user.id}`);
+
+    return c.json({ success: true, message: 'Calendar disconnected' });
+
+  } catch (error: any) {
+    console.error('Calendar disconnect error:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
     chatData.totalMessages = chatData.messages.length;
 
     // TODO: 요약 기능은 나중에 AI 서버에 별도 엔드포인트로 추가 가능
