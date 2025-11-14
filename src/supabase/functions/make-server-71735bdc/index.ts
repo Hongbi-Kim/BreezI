@@ -7,12 +7,12 @@ import * as kv from './kv_store.tsx';
 
 const app = new Hono();
 
-// .env 파일 로드 (선택사항 - 파일이 없어도 괜찮음)
+// .env 파일 로드 (선택사항)
 try {
   await load({ export: true });
   console.log('✅ .env file loaded');
 } catch (error) {
-  console.log('ℹ️ No .env file found, using system environment variables');
+  console.log('ℹ️  No .env file, using system env vars');
 }
 
 app.use('*', logger(console.log));
@@ -117,7 +117,7 @@ const supabase = createClient(
 );
 
 // Helper function to get user from access token
-async function getUserFromToken(authHeader: string | null) {
+async function getUserFromToken(authHeader: string | null | undefined) {
   if (!authHeader) return null;
   const accessToken = authHeader.split(' ')[1];
   const { data: { user }, error } = await supabase.auth.getUser(accessToken);
@@ -1731,7 +1731,7 @@ app.get('/make-server-71735bdc/reports/emotions', async (c) => {
 
     // Count emotions
     const emotionCounts: Record<string, number> = {};
-    filteredDiaries.forEach(diary => {
+    filteredDiaries.forEach((diary: any) => {
       if (diary && diary.emotion) {
         emotionCounts[diary.emotion] = (emotionCounts[diary.emotion] || 0) + 1;
       }
@@ -2494,7 +2494,7 @@ app.get('/make-server-71735bdc/calendar/events', async (c) => {
     );
 
     if (!response.ok) {
-      return c.json({ error: 'Failed to fetch calendar events' }, response.status);
+      return c.json({ error: 'Failed to fetch calendar events' }, response.status as any);
     }
 
     const data = await response.json();
@@ -3457,7 +3457,7 @@ app.post('/make-server-71735bdc/ai-memories', async (c) => {
     const newMemory = {
       id: `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       content: content.trim(),
-      createdAt: formatTimestamp(new Date(), timezone)
+      createdAt: formatTimestamp(new Date())
     };
     
     memories.push(newMemory);
